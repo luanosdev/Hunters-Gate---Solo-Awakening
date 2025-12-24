@@ -219,70 +219,73 @@ export const renderGame = ({ canvas, maskCanvas, world, activeBoss, time }: Rend
     ctx.restore();
 
     // --- LIGHTING / FOG OF WAR (MASKING) ---
-    const maskCtx = maskCanvas.getContext('2d');
-    if (maskCtx) {
-        maskCtx.globalCompositeOperation = 'source-over'; 
-        maskCtx.fillStyle = 'rgba(0, 0, 0, 0.94)'; 
-        maskCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); 
-        maskCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-        
-        maskCtx.globalCompositeOperation = 'destination-out';
-        
-        const drawPlayerLight = () => {
-            const radius = 350; 
-            const poly = calculateVisibility(player, radius, world.tiles);
-            if (poly.length > 0) { 
-                maskCtx.save(); 
-                maskCtx.beginPath(); 
-                const startX = poly[0].x - world.camera.x + CANVAS_WIDTH/2; 
-                const startY = poly[0].y - world.camera.y + CANVAS_HEIGHT/2; 
-                maskCtx.moveTo(startX, startY); 
-                for (let i = 1; i < poly.length; i++) { 
-                    const px = poly[i].x - world.camera.x + CANVAS_WIDTH/2; 
-                    const py = poly[i].y - world.camera.y + CANVAS_HEIGHT/2; 
-                    maskCtx.lineTo(px, py); 
-                } 
-                maskCtx.closePath(); 
-                maskCtx.clip(); 
-                const screenX = player.x - world.camera.x + CANVAS_WIDTH/2; 
-                const screenY = player.y - world.camera.y + CANVAS_HEIGHT/2; 
+    // Ensure mask dimensions are valid to prevent InvalidStateError
+    if (maskCanvas.width > 0 && maskCanvas.height > 0) {
+        const maskCtx = maskCanvas.getContext('2d');
+        if (maskCtx) {
+            maskCtx.globalCompositeOperation = 'source-over'; 
+            maskCtx.fillStyle = 'rgba(0, 0, 0, 0.94)'; 
+            maskCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); 
+            maskCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            maskCtx.globalCompositeOperation = 'destination-out';
+            
+            const drawPlayerLight = () => {
+                const radius = 350; 
+                const poly = calculateVisibility(player, radius, world.tiles);
+                if (poly.length > 0) { 
+                    maskCtx.save(); 
+                    maskCtx.beginPath(); 
+                    const startX = poly[0].x - world.camera.x + CANVAS_WIDTH/2; 
+                    const startY = poly[0].y - world.camera.y + CANVAS_HEIGHT/2; 
+                    maskCtx.moveTo(startX, startY); 
+                    for (let i = 1; i < poly.length; i++) { 
+                        const px = poly[i].x - world.camera.x + CANVAS_WIDTH/2; 
+                        const py = poly[i].y - world.camera.y + CANVAS_HEIGHT/2; 
+                        maskCtx.lineTo(px, py); 
+                    } 
+                    maskCtx.closePath(); 
+                    maskCtx.clip(); 
+                    const screenX = player.x - world.camera.x + CANVAS_WIDTH/2; 
+                    const screenY = player.y - world.camera.y + CANVAS_HEIGHT/2; 
+                    const grad = maskCtx.createRadialGradient(screenX, screenY, radius * 0.2, screenX, screenY, radius); 
+                    grad.addColorStop(0, `rgba(0,0,0,1)`); 
+                    grad.addColorStop(1, 'rgba(0,0,0,0)'); 
+                    maskCtx.fillStyle = grad; 
+                    maskCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); 
+                    maskCtx.restore(); 
+                }
+            };
+
+            const drawSimpleLight = (worldX: number, worldY: number, radius: number, intensity: number) => { 
+                const screenX = worldX - world.camera.x + CANVAS_WIDTH/2; 
+                const screenY = worldY - world.camera.y + CANVAS_HEIGHT/2; 
+                if (screenX < -radius || screenX > CANVAS_WIDTH + radius || screenY < -radius || screenY > CANVAS_HEIGHT + radius) return; 
                 const grad = maskCtx.createRadialGradient(screenX, screenY, radius * 0.2, screenX, screenY, radius); 
-                grad.addColorStop(0, `rgba(0,0,0,1)`); 
+                grad.addColorStop(0, `rgba(0,0,0,${intensity})`); 
                 grad.addColorStop(1, 'rgba(0,0,0,0)'); 
                 maskCtx.fillStyle = grad; 
-                maskCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); 
-                maskCtx.restore(); 
-            }
-        };
+                maskCtx.beginPath(); 
+                maskCtx.arc(screenX, screenY, radius, 0, Math.PI*2); 
+                maskCtx.fill(); 
+            };
 
-        const drawSimpleLight = (worldX: number, worldY: number, radius: number, intensity: number) => { 
-            const screenX = worldX - world.camera.x + CANVAS_WIDTH/2; 
-            const screenY = worldY - world.camera.y + CANVAS_HEIGHT/2; 
-            if (screenX < -radius || screenX > CANVAS_WIDTH + radius || screenY < -radius || screenY > CANVAS_HEIGHT + radius) return; 
-            const grad = maskCtx.createRadialGradient(screenX, screenY, radius * 0.2, screenX, screenY, radius); 
-            grad.addColorStop(0, `rgba(0,0,0,${intensity})`); 
-            grad.addColorStop(1, 'rgba(0,0,0,0)'); 
-            maskCtx.fillStyle = grad; 
-            maskCtx.beginPath(); 
-            maskCtx.arc(screenX, screenY, radius, 0, Math.PI*2); 
-            maskCtx.fill(); 
-        };
-
-        drawPlayerLight();
-        world.projectiles.forEach(p => { if (p.owner === 'PLAYER') drawSimpleLight(p.x, p.y, 100, 0.8); });
-        if (activeBoss) { drawSimpleLight(activeBoss.x, activeBoss.y, 250, 0.6); }
-        world.items.forEach(item => { 
-            const radius = item.rarity === Rarity.LEGENDARY ? 100 : item.rarity === Rarity.EPIC ? 80 : 50; 
-            const intensity = item.rarity === Rarity.LEGENDARY ? 0.7 : 0.4; 
-            drawSimpleLight(item.x, item.y, radius, intensity); 
-        });
-        world.xpOrbs.forEach(orb => { drawSimpleLight(orb.x, orb.y, 40, 0.4); });
-        
-        // Apply Mask
-        ctx.save(); 
-        ctx.setTransform(1, 0, 0, 1, 0, 0); 
-        ctx.globalCompositeOperation = 'source-over'; 
-        ctx.drawImage(maskCanvas, 0, 0); 
-        ctx.restore();
+            drawPlayerLight();
+            world.projectiles.forEach(p => { if (p.owner === 'PLAYER') drawSimpleLight(p.x, p.y, 100, 0.8); });
+            if (activeBoss) { drawSimpleLight(activeBoss.x, activeBoss.y, 250, 0.6); }
+            world.items.forEach(item => { 
+                const radius = item.rarity === Rarity.LEGENDARY ? 100 : item.rarity === Rarity.EPIC ? 80 : 50; 
+                const intensity = item.rarity === Rarity.LEGENDARY ? 0.7 : 0.4; 
+                drawSimpleLight(item.x, item.y, radius, intensity); 
+            });
+            world.xpOrbs.forEach(orb => { drawSimpleLight(orb.x, orb.y, 40, 0.4); });
+            
+            // Apply Mask
+            ctx.save(); 
+            ctx.setTransform(1, 0, 0, 1, 0, 0); 
+            ctx.globalCompositeOperation = 'source-over'; 
+            ctx.drawImage(maskCanvas, 0, 0); 
+            ctx.restore();
+        }
     }
 }

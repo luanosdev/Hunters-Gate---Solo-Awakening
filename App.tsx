@@ -504,7 +504,6 @@ export default function App() {
     return () => cancelAnimationFrame(animationFrameId);
   }, [gameState, dungeonTimer]);
 
-  console.log(process.env)
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-black font-sans">
       <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="block" />

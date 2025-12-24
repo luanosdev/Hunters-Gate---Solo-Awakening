@@ -1,8 +1,9 @@
 
 import { WeaponType, Rarity, Item, ScalingGrade, EquipmentSlot, StatType } from './types';
 
-export const CANVAS_WIDTH = window.innerWidth;
-export const CANVAS_HEIGHT = window.innerHeight;
+// Fallback to non-zero values if window dimensions are missing or zero
+export const CANVAS_WIDTH = window.innerWidth || 1024;
+export const CANVAS_HEIGHT = window.innerHeight || 768;
 
 export const PLAYER_BASE_SPEED = 240; // Pixels per second
 export const OUT_OF_COMBAT_DELAY = 3000; // ms
