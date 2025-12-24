@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
-import { Player, PortalMission, Item, EquipmentSlot } from '../../types';
+import { Player, PortalMission, Item, EquipmentSlot, StatType } from '../../types';
 import { RANK_META, SHOP_ITEMS, RARITY_COLORS } from '../../constants';
-import { Coins, MapPin, Briefcase, ShoppingBag, Lock, Skull, Ghost, Crown, Circle, Swords, Shirt, Diamond, Hand, Club, Footprints } from 'lucide-react';
+import { Coins, MapPin, Briefcase, ShoppingBag, Lock, Skull, Ghost, Crown, Circle, Swords, Shirt, Diamond, Hand, Club, Footprints, Plus } from 'lucide-react';
 import { ItemIcon } from '../ui/ItemIcon';
 
 interface MainMenuProps {
@@ -14,11 +15,20 @@ interface MainMenuProps {
     handleDropOnInventory: (e: React.DragEvent) => void;
     handleDragStart: (e: React.DragEvent, item: Item, source: 'INVENTORY' | 'GROUND' | 'EQUIPPED', slot?: EquipmentSlot) => void;
     onItemClick: (item: Item, type: 'INVENTORY' | 'SHOP_BUY' | 'SHOP_SELL') => void;
+    onUpgradeStat?: (stat: StatType) => void;
 }
 
-export const MainMenu: React.FC<MainMenuProps> = ({ player, score, missions, onStartMission, renderEquipSlot, handleDragOver, handleDropOnInventory, handleDragStart, onItemClick }) => {
+export const MainMenu: React.FC<MainMenuProps> = ({ player, score, missions, onStartMission, renderEquipSlot, handleDragOver, handleDropOnInventory, handleDragStart, onItemClick, onUpgradeStat }) => {
     const [menuTab, setMenuTab] = useState<'MISSIONS' | 'INVENTORY' | 'SHOP'>('MISSIONS');
     const hasWeapon = !!player.equipment.MAIN_HAND;
+
+    const stats: { key: StatType, label: string }[] = [
+        { key: 'strength', label: 'Strength' },
+        { key: 'agility', label: 'Agility' },
+        { key: 'vitality', label: 'Vitality' },
+        { key: 'perception', label: 'Perception' },
+        { key: 'intelligence', label: 'Intelligence' },
+    ];
 
     return (
         <div className="absolute inset-0 bg-slate-900 flex flex-col items-center p-8 overflow-y-auto">
@@ -75,8 +85,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({ player, score, missions, onS
                     {menuTab === 'INVENTORY' && (
                         <div className="grid grid-cols-2 gap-8 bg-slate-800/50 p-6 rounded-xl border border-slate-700">
                             {/* Equipment Grid */}
-                            <div className="flex flex-col items-center">
-                                <h3 className="text-xl font-bold text-slate-300 uppercase mb-6">Equipped</h3>
+                            <div className="flex flex-col items-center gap-4">
+                                <h3 className="text-xl font-bold text-slate-300 uppercase">Equipped</h3>
                                 <div className="grid grid-cols-3 gap-4 p-4 bg-slate-800/30 rounded-lg">
                                     <div className="flex justify-center">{renderEquipSlot('CAPE', <Ghost size={24} />)}</div>
                                     <div className="flex justify-center">{renderEquipSlot('HEAD', <Crown size={24} />)}</div>
@@ -93,6 +103,27 @@ export const MainMenu: React.FC<MainMenuProps> = ({ player, score, missions, onS
                                     <div></div>
                                     <div className="flex justify-center">{renderEquipSlot('BOOTS', <Footprints size={24} />)}</div>
                                     <div></div>
+                                </div>
+                                
+                                {/* Stats Panel in Main Menu */}
+                                <div className="w-full bg-slate-900 border border-slate-800 rounded p-4">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <h4 className="text-sm font-bold text-slate-400 uppercase">Attributes</h4>
+                                        {player.attributePoints > 0 && <span className="text-yellow-500 font-mono text-xs font-bold">{player.attributePoints} PTS Available</span>}
+                                    </div>
+                                    <div className="space-y-1">
+                                        {stats.map(s => (
+                                            <div key={s.key} className="flex justify-between items-center text-xs">
+                                                <span className="text-slate-500 uppercase">{s.label}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-white font-mono">{player[s.key]}</span>
+                                                    {player.attributePoints > 0 && onUpgradeStat && (
+                                                        <button onClick={() => onUpgradeStat(s.key)} className="text-blue-500 hover:text-white"><Plus size={12} /></button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
 

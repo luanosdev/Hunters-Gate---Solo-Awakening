@@ -1,9 +1,11 @@
+
 import React, { useState } from 'react';
 import { Player, GameState, Item, PortalMission, Enemy, EquipmentSlot } from '../types';
 import { RARITY_COLORS } from '../constants';
 import { InGameHUD } from './hud/InGameHUD';
 import { MainMenu } from './menu/MainMenu';
 import { ItemDetailModal } from './modals/ItemDetailModal';
+import { AttributeModal } from './modals/AttributeModal';
 import { ItemIcon } from './ui/ItemIcon';
 
 interface UIProps {
@@ -160,6 +162,9 @@ export const UIOverlay: React.FC<UIProps> = ({
   return (
       <>
         {modal}
+        
+        {/* Persistent Attribute Modal when Points Available */}
+        {onUpgradeStat && <AttributeModal player={player} onUpgrade={onUpgradeStat} />}
 
         {gameState === GameState.DUNGEON && (
             <>
@@ -202,6 +207,7 @@ export const UIOverlay: React.FC<UIProps> = ({
                 handleDropOnInventory={handleDropOnInventory}
                 handleDragStart={handleDragStart}
                 onItemClick={(item, type) => { setSelectedItem(item); setInteractionType(type); }}
+                onUpgradeStat={onUpgradeStat}
             />
         )}
       </>
