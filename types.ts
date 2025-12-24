@@ -1,5 +1,4 @@
 
-
 export enum GameState {
   MENU,
   DUNGEON,
@@ -142,6 +141,7 @@ export interface Enemy extends Entity {
   hasShield: boolean;
   isPhasing: boolean; // Walks through walls
   isBurrower: boolean; // Hides in ground
+  engaged?: boolean; // For bosses, true if fight started
 }
 
 export interface Projectile {
@@ -206,4 +206,5 @@ export interface GameWorld {
   xpOrbs: ExperienceOrb[];
   camera: { x: number, y: number };
   score: number;
+  bossRoom?: { x: number, y: number, w: number, h: number };
 }

@@ -111,6 +111,56 @@ export default function App() {
     if (player.isDead) { if (gameState !== GameState.GAME_OVER) setGameState(GameState.GAME_OVER); return; }
     if (player.inventoryOpen) return;
 
+    // --- BOSS ROOM SEALING LOGIC ---
+    if (world.bossRoom) {
+      const boss = world.enemies.find(e => e.type === 'BOSS' && !e.isDead);
+      
+      if (boss && !boss.engaged) {
+          // Define bounds (Tiles to Pixels)
+          // Add margin (e.g. 1 tile deep) to ensure player is fully inside before sealing
+          const margin = TILE_SIZE * 1.5;
+          const minX = world.bossRoom.x * TILE_SIZE + margin;
+          const maxX = (world.bossRoom.x + world.bossRoom.w) * TILE_SIZE - margin;
+          const minY = world.bossRoom.y * TILE_SIZE + margin;
+          const maxY = (world.bossRoom.y + world.bossRoom.h) * TILE_SIZE - margin;
+
+          // Check if player is inside
+          if (player.x > minX && player.x < maxX && player.y > minY && player.y < maxY) {
+              boss.engaged = true;
+              setActiveBoss({...boss}); // Trigger UI update
+              world.texts.push({ id: Math.random().toString(), x: player.x, y: player.y - 100, text: "ARENA SEALED", color: "#ef4444", life: 3.0, vy: -10 });
+              
+              // Seal the room: Scan perimeter and turn FLOOR into WALL
+              const bx = world.bossRoom.x;
+              const by = world.bossRoom.y;
+              const bw = world.bossRoom.w;
+              const bh = world.bossRoom.h;
+
+              // Top and Bottom walls
+              for (let i = bx; i < bx + bw; i++) {
+                  if (world.tiles[by][i] === TileType.FLOOR) world.tiles[by][i] = TileType.WALL;
+                  if (world.tiles[by + bh - 1][i] === TileType.FLOOR) world.tiles[by + bh - 1][i] = TileType.WALL;
+              }
+              // Left and Right walls
+              for (let i = by; i < by + bh; i++) {
+                  if (world.tiles[i][bx] === TileType.FLOOR) world.tiles[i][bx] = TileType.WALL;
+                  if (world.tiles[i][bx + bw - 1] === TileType.FLOOR) world.tiles[i][bx + bw - 1] = TileType.WALL;
+              }
+
+              // Visual shake or particles for sealing
+              for(let i=0; i<20; i++) {
+                 world.particles.push({ 
+                     id: Math.random().toString(), 
+                     x: minX + Math.random()*(maxX-minX), 
+                     y: minY + Math.random()*(maxY-minY), 
+                     vx: 0, vy: 0, life: 1, maxLife: 1, color: '#ef4444', size: 5 
+                 });
+              }
+          }
+      }
+    }
+
+
     const screenCenterX = CANVAS_WIDTH / 2;
     const screenCenterY = CANVAS_HEIGHT / 2;
     const dx = inputs.mouseX - screenCenterX;
@@ -278,97 +328,101 @@ export default function App() {
 
       // --- UNIQUE BOSS AI & MOVES ---
       if (enemy.type === 'BOSS' && enemy.bossId) {
-          if (enemy.attackTimer > 0) enemy.attackTimer -= dt;
+          
+          // Only start acting if engaged
+          if (enemy.engaged) {
+            if (enemy.attackTimer > 0) enemy.attackTimer -= dt;
 
-          // KARGAL (CAVE): Smash and Charge
-          if (enemy.bossId === 'KARGAL') {
-              if (enemy.state === 'IDLE') enemy.state = 'CHASE';
-              if (enemy.state === 'CHASE') {
-                 // Move logic
-                 const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
-                 enemy.x += Math.cos(angle) * enemy.speed * dt;
-                 enemy.y += Math.sin(angle) * enemy.speed * dt;
+            // KARGAL (CAVE): Smash and Charge
+            if (enemy.bossId === 'KARGAL') {
+                if (enemy.state === 'IDLE') enemy.state = 'CHASE';
+                if (enemy.state === 'CHASE') {
+                   // Move logic
+                   const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                   enemy.x += Math.cos(angle) * enemy.speed * dt;
+                   enemy.y += Math.sin(angle) * enemy.speed * dt;
 
-                 if (enemy.attackTimer <= 0 && distToPlayer < enemy.attackRange) {
-                     enemy.state = 'PREPARING';
-                     enemy.telegraphTimer = enemy.telegraphDuration;
-                 }
-              } else if (enemy.state === 'PREPARING') {
-                 enemy.telegraphTimer -= dt;
-                 if (enemy.telegraphTimer <= 0) {
-                     // Smash Attack
-                     const explosionRadius = 120;
-                     if (distance(enemy, player) < explosionRadius && !player.isDodging) {
-                         player.hp -= enemy.damage * 1.5;
-                         world.texts.push({id: Math.random().toString(), x: player.x, y: player.y, text: `-${Math.round(enemy.damage * 1.5)}`, color: "#ef4444", life: 0.8, vy: -30});
-                     }
-                     // Shockwave particles
-                     for(let k=0; k<12; k++) {
-                         const a = (k / 12) * Math.PI * 2;
-                         world.projectiles.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, vx: Math.cos(a)*200, vy: Math.sin(a)*200, radius: 4, damage: enemy.damage*0.3, owner: 'ENEMY', lifeTime: 1, color: '#94a3b8' });
-                     }
-                     enemy.state = 'CHASE';
-                     enemy.attackTimer = enemy.attackCooldown;
-                 }
-              }
-          }
-          // XERATH (DESERT): Burrow and Scatter Shot
-          else if (enemy.bossId === 'XERATH') {
-              if (enemy.state === 'BURROWED') {
-                 if (distToPlayer < 200) { enemy.state = 'PREPARING'; enemy.telegraphTimer = 0.5; } // Pop up
-              } else if (enemy.state === 'PREPARING') {
-                 enemy.telegraphTimer -= dt;
-                 if (enemy.telegraphTimer <= 0) {
-                    enemy.state = 'ATTACKING';
-                    // Sand Blast (Ring of projectiles)
-                    for(let k=0; k<8; k++) {
-                         const a = (k / 8) * Math.PI * 2;
-                         world.projectiles.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, vx: Math.cos(a)*300, vy: Math.sin(a)*300, radius: 6, damage: enemy.damage, owner: 'ENEMY', lifeTime: 2, color: '#eab308' });
-                    }
-                    enemy.state = 'CHASE';
-                    enemy.attackTimer = 1.0;
-                 }
-              } else if (enemy.state === 'CHASE') {
-                 const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
-                 enemy.x += Math.cos(angle) * enemy.speed * dt;
-                 enemy.y += Math.sin(angle) * enemy.speed * dt;
-                 if (enemy.attackTimer <= 0) { enemy.state = 'BURROWED'; enemy.attackTimer = 2.0; }
-              } else if (enemy.state === 'ATTACKING') {
-                  enemy.state = 'CHASE';
-              }
-          }
-          // ELARA (FOREST): Ranged Volley and Summons
-          else if (enemy.bossId === 'ELARA') {
-              if (enemy.state === 'IDLE') enemy.state = 'CHASE';
-              if (enemy.state === 'CHASE') {
-                  // Keep distance
-                  if (distToPlayer < 300) {
-                       const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
-                       enemy.x -= Math.cos(angle) * enemy.speed * dt;
-                       enemy.y -= Math.sin(angle) * enemy.speed * dt;
-                  } else {
-                       const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
-                       enemy.x += Math.cos(angle) * enemy.speed * dt;
-                       enemy.y += Math.sin(angle) * enemy.speed * dt;
-                  }
-
-                  if (enemy.attackTimer <= 0) {
-                      enemy.state = 'PREPARING';
-                      enemy.telegraphTimer = enemy.telegraphDuration;
-                  }
-              } else if (enemy.state === 'PREPARING') {
-                  enemy.telegraphTimer -= dt;
-                  if (enemy.telegraphTimer <= 0) {
-                      // Spirit Volley (3 homing shots)
-                      const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
-                      world.projectiles.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, vx: Math.cos(angle)*350, vy: Math.sin(angle)*350, radius: 8, damage: enemy.damage, owner: 'ENEMY', lifeTime: 3, color: '#4ade80' });
-                      world.projectiles.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, vx: Math.cos(angle - 0.3)*350, vy: Math.sin(angle - 0.3)*350, radius: 8, damage: enemy.damage, owner: 'ENEMY', lifeTime: 3, color: '#4ade80' });
-                      world.projectiles.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, vx: Math.cos(angle + 0.3)*350, vy: Math.sin(angle + 0.3)*350, radius: 8, damage: enemy.damage, owner: 'ENEMY', lifeTime: 3, color: '#4ade80' });
-                      
+                   if (enemy.attackTimer <= 0 && distToPlayer < enemy.attackRange) {
+                       enemy.state = 'PREPARING';
+                       enemy.telegraphTimer = enemy.telegraphDuration;
+                   }
+                } else if (enemy.state === 'PREPARING') {
+                   enemy.telegraphTimer -= dt;
+                   if (enemy.telegraphTimer <= 0) {
+                       // Smash Attack
+                       const explosionRadius = 120;
+                       if (distance(enemy, player) < explosionRadius && !player.isDodging) {
+                           player.hp -= enemy.damage * 1.5;
+                           world.texts.push({id: Math.random().toString(), x: player.x, y: player.y, text: `-${Math.round(enemy.damage * 1.5)}`, color: "#ef4444", life: 0.8, vy: -30});
+                       }
+                       // Shockwave particles
+                       for(let k=0; k<12; k++) {
+                           const a = (k / 12) * Math.PI * 2;
+                           world.projectiles.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, vx: Math.cos(a)*200, vy: Math.sin(a)*200, radius: 4, damage: enemy.damage*0.3, owner: 'ENEMY', lifeTime: 1, color: '#94a3b8' });
+                       }
+                       enemy.state = 'CHASE';
+                       enemy.attackTimer = enemy.attackCooldown;
+                   }
+                }
+            }
+            // XERATH (DESERT): Burrow and Scatter Shot
+            else if (enemy.bossId === 'XERATH') {
+                if (enemy.state === 'BURROWED') {
+                   if (distToPlayer < 200) { enemy.state = 'PREPARING'; enemy.telegraphTimer = 0.5; } // Pop up
+                } else if (enemy.state === 'PREPARING') {
+                   enemy.telegraphTimer -= dt;
+                   if (enemy.telegraphTimer <= 0) {
+                      enemy.state = 'ATTACKING';
+                      // Sand Blast (Ring of projectiles)
+                      for(let k=0; k<8; k++) {
+                           const a = (k / 8) * Math.PI * 2;
+                           world.projectiles.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, vx: Math.cos(a)*300, vy: Math.sin(a)*300, radius: 6, damage: enemy.damage, owner: 'ENEMY', lifeTime: 2, color: '#eab308' });
+                      }
                       enemy.state = 'CHASE';
-                      enemy.attackTimer = enemy.attackCooldown;
-                  }
-              }
+                      enemy.attackTimer = 1.0;
+                   }
+                } else if (enemy.state === 'CHASE') {
+                   const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                   enemy.x += Math.cos(angle) * enemy.speed * dt;
+                   enemy.y += Math.sin(angle) * enemy.speed * dt;
+                   if (enemy.attackTimer <= 0) { enemy.state = 'BURROWED'; enemy.attackTimer = 2.0; }
+                } else if (enemy.state === 'ATTACKING') {
+                    enemy.state = 'CHASE';
+                }
+            }
+            // ELARA (FOREST): Ranged Volley and Summons
+            else if (enemy.bossId === 'ELARA') {
+                if (enemy.state === 'IDLE') enemy.state = 'CHASE';
+                if (enemy.state === 'CHASE') {
+                    // Keep distance
+                    if (distToPlayer < 300) {
+                         const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                         enemy.x -= Math.cos(angle) * enemy.speed * dt;
+                         enemy.y -= Math.sin(angle) * enemy.speed * dt;
+                    } else {
+                         const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                         enemy.x += Math.cos(angle) * enemy.speed * dt;
+                         enemy.y += Math.sin(angle) * enemy.speed * dt;
+                    }
+
+                    if (enemy.attackTimer <= 0) {
+                        enemy.state = 'PREPARING';
+                        enemy.telegraphTimer = enemy.telegraphDuration;
+                    }
+                } else if (enemy.state === 'PREPARING') {
+                    enemy.telegraphTimer -= dt;
+                    if (enemy.telegraphTimer <= 0) {
+                        // Spirit Volley (3 homing shots)
+                        const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                        world.projectiles.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, vx: Math.cos(angle)*350, vy: Math.sin(angle)*350, radius: 8, damage: enemy.damage, owner: 'ENEMY', lifeTime: 3, color: '#4ade80' });
+                        world.projectiles.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, vx: Math.cos(angle - 0.3)*350, vy: Math.sin(angle - 0.3)*350, radius: 8, damage: enemy.damage, owner: 'ENEMY', lifeTime: 3, color: '#4ade80' });
+                        world.projectiles.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, vx: Math.cos(angle + 0.3)*350, vy: Math.sin(angle + 0.3)*350, radius: 8, damage: enemy.damage, owner: 'ENEMY', lifeTime: 3, color: '#4ade80' });
+                        
+                        enemy.state = 'CHASE';
+                        enemy.attackTimer = enemy.attackCooldown;
+                    }
+                }
+            }
           }
       }
       
@@ -481,10 +535,11 @@ export default function App() {
       }
 
       setCurrentMission(mission);
-      const { tiles, startPos, bossPos, rooms, width, height } = generateDungeonMap(mission.theme, mission.rank);
+      const { tiles, startPos, bossPos, rooms, bossRoom, width, height } = generateDungeonMap(mission.theme, mission.rank);
       w.tiles = tiles; w.width = width; w.height = height; w.player.x = startPos.x; w.player.y = startPos.y;
       w.enemies = []; w.items = []; w.xpOrbs = []; w.projectiles = [];
       w.theme = mission.theme;
+      w.bossRoom = bossRoom; // Store boss room for physics/logic
       
       const themeEnemies = THEME_ENEMIES[mission.theme];
       const bossKey = THEME_BOSSES[mission.theme];
@@ -519,7 +574,7 @@ export default function App() {
           maxHp: bossMaxHp, hp: bossMaxHp, 
           damage: bossStats.damage * (1 + mission.difficulty * 0.1), 
           originX: bossPos.x, originY: bossPos.y, patrolTimer: 0, isDead: false,
-          attackTimer: 0, telegraphTimer: 0
+          attackTimer: 0, telegraphTimer: 0, engaged: false // Initialize as not engaged
       });
 
       setDungeonTimer(mission.timeLeft);

@@ -54,20 +54,22 @@ export const generateDungeonMap = (theme: DungeonTheme, rank: string) => {
     }
 
     for (let i = 0; i < maxRooms; i++) {
-        const w = Math.floor(Math.random() * (maxRoom - minRoom + 1)) + minRoom;
-        const h = Math.floor(Math.random() * (maxRoom - minRoom + 1)) + minRoom;
+        // Boss Room (Last room logic)
+        const isBossRoom = i === maxRooms - 1;
+        const roomW = isBossRoom ? 20 : Math.floor(Math.random() * (maxRoom - minRoom + 1)) + minRoom;
+        const roomH = isBossRoom ? 20 : Math.floor(Math.random() * (maxRoom - minRoom + 1)) + minRoom;
         
         // Ensure bounds
-        const x = Math.floor(Math.random() * (width - w - 2)) + 1;
-        const y = Math.floor(Math.random() * (height - h - 2)) + 1;
+        const x = Math.floor(Math.random() * (width - roomW - 2)) + 1;
+        const y = Math.floor(Math.random() * (height - roomH - 2)) + 1;
 
-        const newRoom = { x, y, w, h };
+        const newRoom = { x, y, w: roomW, h: roomH };
         
         let failed = false;
         // Collision check between rooms
         for (const other of rooms) {
             // Add padding
-            if (x < other.x + other.w + 2 && x + w + 2 > other.x && y < other.y + other.h + 2 && y + h + 2 > other.y) {
+            if (x < other.x + other.w + 2 && x + roomW + 2 > other.x && y < other.y + other.h + 2 && y + roomH + 2 > other.y) {
                 failed = true;
                 break;
             }
@@ -75,8 +77,8 @@ export const generateDungeonMap = (theme: DungeonTheme, rank: string) => {
 
         if (!failed) {
             // Carve Room
-            for (let ry = y; ry < y + h; ry++) {
-                for (let rx = x; rx < x + w; rx++) {
+            for (let ry = y; ry < y + roomH; ry++) {
+                for (let rx = x; rx < x + roomW; rx++) {
                     tiles[ry][rx] = TileType.FLOOR;
                 }
             }
@@ -86,8 +88,8 @@ export const generateDungeonMap = (theme: DungeonTheme, rank: string) => {
                 const prev = rooms[rooms.length - 1];
                 const prevCX = Math.floor(prev.x + prev.w / 2);
                 const prevCY = Math.floor(prev.y + prev.h / 2);
-                const newCX = Math.floor(x + w / 2);
-                const newCY = Math.floor(y + h / 2);
+                const newCX = Math.floor(x + roomW / 2);
+                const newCY = Math.floor(y + roomH / 2);
 
                 // For Desert, make wide corridors
                 const corridorWidth = theme === 'DESERT' ? 3 : 1;
@@ -136,6 +138,9 @@ export const generateDungeonMap = (theme: DungeonTheme, rank: string) => {
 
     const startPos = { x: (startRoom.x + startRoom.w / 2) * TILE_SIZE, y: (startRoom.y + startRoom.h / 2) * TILE_SIZE };
     const bossPos = { x: (endRoom.x + endRoom.w / 2) * TILE_SIZE, y: (endRoom.y + endRoom.h / 2) * TILE_SIZE };
+    
+    // Explicitly define boss room for logic usage
+    const bossRoom = endRoom;
 
-    return { tiles, startPos, bossPos, rooms, width: width * TILE_SIZE, height: height * TILE_SIZE };
+    return { tiles, startPos, bossPos, rooms, bossRoom, width: width * TILE_SIZE, height: height * TILE_SIZE };
 };

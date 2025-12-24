@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Player, Enemy, Item, EquipmentSlot, WeaponType } from '../../types';
 import { RARITY_COLORS } from '../../constants';
@@ -46,9 +47,9 @@ export const InGameHUD: React.FC<InGameHUDProps> = ({ player, dungeonTimer, acti
             </div>
           )}
     
-          {activeBoss && activeBoss.state !== 'IDLE' && (
+          {activeBoss && activeBoss.engaged && activeBoss.state !== 'IDLE' && (
             <div className="absolute bottom-12 left-1/2 -translate-x-1/2 w-[600px] max-w-[90%] pointer-events-none animate-in fade-in slide-in-from-bottom-10 duration-1000 z-20">
-                <h2 className="text-center text-red-500 font-bold uppercase tracking-[0.2em] text-lg mb-1 drop-shadow-md" style={{ textShadow: '0 0 10px black' }}>{activeBoss.type === 'BOSS' ? 'Dungeon Monarch' : 'Elite Enemy'}</h2>
+                <h2 className="text-center text-red-500 font-bold uppercase tracking-[0.2em] text-lg mb-1 drop-shadow-md" style={{ textShadow: '0 0 10px black' }}>{activeBoss.name}</h2>
                 <div className="w-full h-6 bg-black/80 border border-slate-600 relative overflow-hidden rounded-sm">
                     <div className="h-full bg-red-700 transition-all duration-200 relative" style={{ width: `${(activeBoss.hp / activeBoss.maxHp) * 100}%` }}><div className="absolute inset-0 bg-gradient-to-b from-red-500/20 to-transparent"></div></div>
                     {activeBoss.state === 'PREPARING' && <div className="absolute top-0 left-0 h-1 bg-yellow-400 animate-pulse w-full"></div>}
