@@ -1,4 +1,5 @@
 
+
 export enum GameState {
   MENU,
   DUNGEON,
@@ -44,25 +45,18 @@ export enum TileType {
 export interface Item {
   id: string;
   name: string;
-  type: WeaponType | 'ARMOR' | 'ACCESSORY'; // Simplified type check
+  type: WeaponType | 'ARMOR' | 'ACCESSORY'; 
   slot: EquipmentSlot;
   rarity: Rarity;
-  setName?: string; // e.g., "Warlord's"
-  
-  // Weapon Specifics (0 if armor)
+  setName?: string; 
   baseDamage: number;
   baseAttackSpeed: number; 
   baseRange: number;
-  
-  // New Mechanics
   power: number; 
   quality: number;
-  
-  // Stats
-  baseStat?: { type: StatType, value: number }; // Fixed attribute from Set/Item Type
-  scaling: ItemScaling; // Only relevant for weapons usually
+  baseStat?: { type: StatType, value: number }; 
+  scaling: ItemScaling; 
   affixes: ItemAffix[];
-
   color: string;
   price: number;
   icon?: string;
@@ -94,26 +88,18 @@ export interface Entity {
 export interface Player extends Entity {
   mana: number;
   maxMana: number;
-  
-  // Equipment System
   equipment: Record<EquipmentSlot, Item | null>;
   inventory: Item[];
-  
   level: number;
   exp: number;
   attributePoints: number;
-  
-  // Base Stats (Raw points allocated)
   strength: number;     
   agility: number;      
   vitality: number;     
   perception: number;   
   intelligence: number; 
-  
-  // Dynamic Stats for UI
   damage?: number;
   attackSpeed?: number;
-
   isAttacking: boolean;
   attackCooldown: number;
   attackVisualTimer: number;
@@ -125,14 +111,23 @@ export interface Player extends Entity {
   lastCombatTime: number;
 }
 
+export type DungeonTheme = 'CAVE' | 'DESERT' | 'FOREST';
+
 export interface Enemy extends Entity {
+  // Appearance
+  name: string;
   type: 'GRUNT' | 'CASTER' | 'BOSS';
+  bossId?: string; // Specific ID for unique bosses (e.g., 'KARGAL')
+  
+  // Stats
   aggroRange: number;
   attackRange: number;
   attackCooldown: number;
   attackTimer: number;
   damage: number;
-  state: 'IDLE' | 'CHASE' | 'PREPARING' | 'ATTACKING';
+  
+  // AI State
+  state: 'IDLE' | 'CHASE' | 'PREPARING' | 'ATTACKING' | 'BURROWED';
   telegraphTimer: number;
   telegraphDuration: number;
   targetPos?: { x: number, y: number };
@@ -141,6 +136,12 @@ export interface Enemy extends Entity {
   originY: number;
   patrolTarget?: {x: number, y: number};
   patrolTimer: number;
+
+  // New Mechanics
+  isRanged: boolean;
+  hasShield: boolean;
+  isPhasing: boolean; // Walks through walls
+  isBurrower: boolean; // Hides in ground
 }
 
 export interface Projectile {
@@ -171,6 +172,7 @@ export interface Particle {
 export interface PortalMission {
   id: string;
   rank: string;
+  theme: DungeonTheme;
   timeLeft: number; 
   difficulty: number;
   description: string;
@@ -193,6 +195,7 @@ export interface GameWorld {
   height: number;
   tiles: TileType[][];
   tileSize: number;
+  theme: DungeonTheme;
   player: Player;
   enemies: Enemy[];
   projectiles: Projectile[];

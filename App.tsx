@@ -1,13 +1,15 @@
+
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GameState, GameWorld, Player, Enemy, PortalMission, WeaponType, Item, TileType, EquipmentSlot } from './types';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, PLAYER_BASE_SPEED, PLAYER_ATTACK_SLOW, DODGE_SPEED_MULT, DODGE_DURATION, DODGE_COOLDOWN, TILE_SIZE, DUNGEON_WIDTH, DUNGEON_HEIGHT, STARTING_WEAPON, ENEMY_TYPES, OUT_OF_COMBAT_DELAY, OUT_OF_COMBAT_SPEED_MULT } from './constants';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, PLAYER_BASE_SPEED, PLAYER_ATTACK_SLOW, DODGE_SPEED_MULT, DODGE_DURATION, DODGE_COOLDOWN, TILE_SIZE, DUNGEON_WIDTH, DUNGEON_HEIGHT, STARTING_WEAPON, BASE_ENEMIES, THEME_ENEMIES, THEME_BOSSES, OUT_OF_COMBAT_DELAY, OUT_OF_COMBAT_SPEED_MULT } from './constants';
 import { UIOverlay } from './components/UIOverlay';
 
 // Systems & Helpers
 import { distance, checkCollision } from './utils/math';
 import { resolveWallCollision } from './systems/physics';
 import { calculateWeaponStats, recalculatePlayerStats } from './systems/stats';
-import { generateLoot, generateXpOrbs } from './systems/loot';
+import { generateLoot, generateBossLoot, generateXpOrbs } from './systems/loot';
 import { generateMissions, generateDungeonMap } from './systems/dungeon';
 import { renderGame } from './systems/renderer';
 import { useGameInput } from './hooks/useGameInput';
@@ -68,9 +70,10 @@ export default function App() {
   const [score, setScore] = useState(0);
   const [dungeonTimer, setDungeonTimer] = useState<number | undefined>(undefined);
   const [missions, setMissions] = useState<PortalMission[]>([]);
+  const [currentMission, setCurrentMission] = useState<PortalMission | null>(null);
 
   const worldRef = useRef<GameWorld>({
-    width: 0, height: 0, tiles: [], tileSize: TILE_SIZE,
+    width: 0, height: 0, tiles: [], tileSize: TILE_SIZE, theme: 'CAVE',
     player: { ...INITIAL_PLAYER },
     enemies: [], projectiles: [], activeMissions: [], particles: [], texts: [], items: [], xpOrbs: [],
     camera: { x: 0, y: 0 }, score: 0
@@ -161,6 +164,7 @@ export default function App() {
         player.attackVisualTimer = 0.3;
         const CONE_ANGLE = Math.PI / 3 + combatStats.bonusArc;
         world.enemies.forEach(enemy => {
+           if (enemy.state === 'BURROWED') return;
            const dist = distance(player, enemy);
            if (dist < combatStats.range + enemy.radius) {
              const angleToEnemy = Math.atan2(enemy.y - player.y, enemy.x - player.x);
@@ -168,9 +172,10 @@ export default function App() {
              while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
              while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
              if (Math.abs(angleDiff) < CONE_ANGLE / 2) { 
-                enemy.hp -= combatStats.damage;
+                const dmg = enemy.hasShield ? combatStats.damage * 0.5 : combatStats.damage;
+                enemy.hp -= dmg;
                 if (enemy.type !== 'BOSS') enemy.state = 'CHASE'; 
-                world.texts.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, text: Math.round(combatStats.damage).toString(), color: '#fff', life: 0.5, vy: -50 });
+                world.texts.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, text: Math.round(dmg).toString(), color: enemy.hasShield ? '#60a5fa' : '#fff', life: 0.5, vy: -50 });
              }
            }
         });
@@ -189,10 +194,12 @@ export default function App() {
         const targetY = player.y + Math.sin(angle) * actualDist;
         world.particles.push({ id: Math.random().toString(), x: targetX, y: targetY, vx: 0, vy: 0, life: 0.5, maxLife: 0.5, color: 'rgba(59, 130, 246, 0.4)', size: combatStats.aoeRadius });
         world.enemies.forEach(enemy => {
+          if (enemy.state === 'BURROWED') return;
           if (distance({x: targetX, y: targetY}, enemy) < combatStats.aoeRadius + enemy.radius) {
-            enemy.hp -= combatStats.damage;
+            const dmg = enemy.hasShield ? combatStats.damage * 0.5 : combatStats.damage;
+            enemy.hp -= dmg;
             if (enemy.type !== 'BOSS') enemy.state = 'CHASE';
-            world.texts.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, text: Math.round(combatStats.damage).toString(), color: '#3b82f6', life: 0.5, vy: -50 });
+            world.texts.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, text: Math.round(dmg).toString(), color: enemy.hasShield ? '#60a5fa' : '#3b82f6', life: 0.5, vy: -50 });
           }
         });
       }
@@ -202,15 +209,22 @@ export default function App() {
       const p = world.projectiles[i];
       p.x += p.vx * dt; p.y += p.vy * dt; p.lifeTime -= dt;
       const gridX = Math.floor(p.x / TILE_SIZE); const gridY = Math.floor(p.y / TILE_SIZE);
-      if (gridX < 0 || gridX >= DUNGEON_WIDTH || gridY < 0 || gridY >= DUNGEON_HEIGHT || world.tiles[gridY][gridX] === TileType.WALL) { world.projectiles.splice(i, 1); continue; }
+      
+      // Wall collision check
+      if (gridX < 0 || gridX >= Math.floor(world.width/TILE_SIZE) || gridY < 0 || gridY >= Math.floor(world.height/TILE_SIZE) || world.tiles[gridY][gridX] === TileType.WALL) { 
+          world.projectiles.splice(i, 1); continue; 
+      }
+      
       let hit = false;
       if (p.owner === 'PLAYER') {
         for (const enemy of world.enemies) {
+          if (enemy.state === 'BURROWED') continue;
           if (checkCollision(p, enemy)) {
-            enemy.hp -= p.damage;
+            const dmg = enemy.hasShield ? p.damage * 0.5 : p.damage;
+            enemy.hp -= dmg;
             if (enemy.type !== 'BOSS') enemy.state = 'CHASE';
             hit = true;
-            world.texts.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, text: Math.round(p.damage).toString(), color: '#fff', life: 0.5, vy: -50 });
+            world.texts.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, text: Math.round(dmg).toString(), color: enemy.hasShield ? '#60a5fa' : '#fff', life: 0.5, vy: -50 });
             break;
           }
         }
@@ -239,9 +253,19 @@ export default function App() {
 
     for (let i = world.enemies.length - 1; i >= 0; i--) {
       const enemy = world.enemies[i];
-      resolveWallCollision(enemy, world.tiles, world.tileSize);
+      if (!enemy.isPhasing) resolveWallCollision(enemy, world.tiles, world.tileSize);
+      
       if (enemy.hp <= 0) {
-        if (Math.random() < 0.4) world.items.push(generateLoot(enemy.x, enemy.y, player.level));
+        // LOOT GENERATION
+        if (enemy.type === 'BOSS' && enemy.bossId) {
+            // Boss Loot
+            const rank = currentMission ? currentMission.rank : 'E';
+            world.items.push(generateBossLoot(enemy.x, enemy.y, player.level, enemy.bossId, rank));
+        } else {
+            // Standard Loot
+            if (Math.random() < 0.4) world.items.push(generateLoot(enemy.x, enemy.y, player.level));
+        }
+
         const xpAmount = (enemy.type === 'BOSS' ? 500 : enemy.type === 'GRUNT' ? 10 : 20);
         world.xpOrbs.push(...generateXpOrbs(enemy.x, enemy.y, xpAmount));
         world.score += (enemy.type === 'BOSS' ? 500 : 50);
@@ -251,37 +275,175 @@ export default function App() {
       }
       
       const distToPlayer = distance(enemy, player);
-      if (enemy.state === 'IDLE') {
-          if (distToPlayer < enemy.aggroRange) { enemy.state = 'CHASE'; } 
-          else {
-              if (enemy.patrolTimer > 0) enemy.patrolTimer -= dt;
-              else {
-                  if (!enemy.patrolTarget) { const angle = Math.random() * Math.PI * 2; const dist = Math.random() * 150; enemy.patrolTarget = { x: enemy.originX + Math.cos(angle) * dist, y: enemy.originY + Math.sin(angle) * dist }; enemy.patrolTimer = 2 + Math.random() * 3; } else { enemy.patrolTarget = undefined; enemy.patrolTimer = 1 + Math.random() * 2; }
-              }
-              if (enemy.patrolTarget) { const dx = enemy.patrolTarget.x - enemy.x; const dy = enemy.patrolTarget.y - enemy.y; const dist = Math.hypot(dx, dy); if (dist > 5) { enemy.x += (dx / dist) * (enemy.speed * 0.5) * dt; } else { enemy.patrolTarget = undefined; enemy.patrolTimer = 1; } }
-          }
-      } else if (enemy.type === 'GRUNT') {
-         if (enemy.state === 'CHASE') {
-             const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
-             enemy.x += Math.cos(angle) * enemy.speed * dt; enemy.y += Math.sin(angle) * enemy.speed * dt;
-             if (distToPlayer < enemy.radius + player.radius && !player.isDodging) { if (Math.random() < dt * 2) { player.hp -= enemy.damage; player.lastCombatTime = performance.now(); world.texts.push({id: Math.random().toString(), x: player.x, y: player.y, text: `-${enemy.damage}`, color: "#ef4444", life: 0.5, vy: -30}); } }
-         }
-      } else if (enemy.type === 'CASTER' || enemy.type === 'BOSS') {
+
+      // --- UNIQUE BOSS AI & MOVES ---
+      if (enemy.type === 'BOSS' && enemy.bossId) {
           if (enemy.attackTimer > 0) enemy.attackTimer -= dt;
-          if (enemy.state === 'CHASE') {
-               if (distToPlayer > enemy.attackRange * 0.7) { const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x); enemy.x += Math.cos(angle) * enemy.speed * dt; enemy.y += Math.sin(angle) * enemy.speed * dt; } 
-               else if (enemy.attackTimer <= 0) { enemy.state = 'PREPARING'; enemy.targetPos = { x: player.x, y: player.y }; enemy.telegraphTimer = enemy.telegraphDuration; }
+
+          // KARGAL (CAVE): Smash and Charge
+          if (enemy.bossId === 'KARGAL') {
+              if (enemy.state === 'IDLE') enemy.state = 'CHASE';
+              if (enemy.state === 'CHASE') {
+                 // Move logic
+                 const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                 enemy.x += Math.cos(angle) * enemy.speed * dt;
+                 enemy.y += Math.sin(angle) * enemy.speed * dt;
+
+                 if (enemy.attackTimer <= 0 && distToPlayer < enemy.attackRange) {
+                     enemy.state = 'PREPARING';
+                     enemy.telegraphTimer = enemy.telegraphDuration;
+                 }
+              } else if (enemy.state === 'PREPARING') {
+                 enemy.telegraphTimer -= dt;
+                 if (enemy.telegraphTimer <= 0) {
+                     // Smash Attack
+                     const explosionRadius = 120;
+                     if (distance(enemy, player) < explosionRadius && !player.isDodging) {
+                         player.hp -= enemy.damage * 1.5;
+                         world.texts.push({id: Math.random().toString(), x: player.x, y: player.y, text: `-${Math.round(enemy.damage * 1.5)}`, color: "#ef4444", life: 0.8, vy: -30});
+                     }
+                     // Shockwave particles
+                     for(let k=0; k<12; k++) {
+                         const a = (k / 12) * Math.PI * 2;
+                         world.projectiles.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, vx: Math.cos(a)*200, vy: Math.sin(a)*200, radius: 4, damage: enemy.damage*0.3, owner: 'ENEMY', lifeTime: 1, color: '#94a3b8' });
+                     }
+                     enemy.state = 'CHASE';
+                     enemy.attackTimer = enemy.attackCooldown;
+                 }
+              }
           }
-          if (enemy.state === 'PREPARING') {
-              enemy.telegraphTimer -= dt;
-              if (enemy.telegraphTimer <= 0) {
-                  enemy.state = 'ATTACKING';
-                  if (enemy.targetPos) {
-                      const explosionRadius = enemy.type === 'BOSS' ? 80 : 40;
-                      if (distance(enemy.targetPos, player) < explosionRadius && !player.isDodging) { player.hp -= enemy.damage; player.lastCombatTime = performance.now(); world.texts.push({id: Math.random().toString(), x: player.x, y: player.y, text: `-${enemy.damage}`, color: "#ef4444", life: 0.5, vy: -30}); }
-                      world.particles.push({id: Math.random().toString(), x: enemy.targetPos.x, y: enemy.targetPos.y, vx: 0, vy: 0, life: 0.4, maxLife: 0.4, size: explosionRadius, color: 'rgba(239, 68, 68, 0.5)'});
+          // XERATH (DESERT): Burrow and Scatter Shot
+          else if (enemy.bossId === 'XERATH') {
+              if (enemy.state === 'BURROWED') {
+                 if (distToPlayer < 200) { enemy.state = 'PREPARING'; enemy.telegraphTimer = 0.5; } // Pop up
+              } else if (enemy.state === 'PREPARING') {
+                 enemy.telegraphTimer -= dt;
+                 if (enemy.telegraphTimer <= 0) {
+                    enemy.state = 'ATTACKING';
+                    // Sand Blast (Ring of projectiles)
+                    for(let k=0; k<8; k++) {
+                         const a = (k / 8) * Math.PI * 2;
+                         world.projectiles.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, vx: Math.cos(a)*300, vy: Math.sin(a)*300, radius: 6, damage: enemy.damage, owner: 'ENEMY', lifeTime: 2, color: '#eab308' });
+                    }
+                    enemy.state = 'CHASE';
+                    enemy.attackTimer = 1.0;
+                 }
+              } else if (enemy.state === 'CHASE') {
+                 const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                 enemy.x += Math.cos(angle) * enemy.speed * dt;
+                 enemy.y += Math.sin(angle) * enemy.speed * dt;
+                 if (enemy.attackTimer <= 0) { enemy.state = 'BURROWED'; enemy.attackTimer = 2.0; }
+              } else if (enemy.state === 'ATTACKING') {
+                  enemy.state = 'CHASE';
+              }
+          }
+          // ELARA (FOREST): Ranged Volley and Summons
+          else if (enemy.bossId === 'ELARA') {
+              if (enemy.state === 'IDLE') enemy.state = 'CHASE';
+              if (enemy.state === 'CHASE') {
+                  // Keep distance
+                  if (distToPlayer < 300) {
+                       const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                       enemy.x -= Math.cos(angle) * enemy.speed * dt;
+                       enemy.y -= Math.sin(angle) * enemy.speed * dt;
+                  } else {
+                       const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                       enemy.x += Math.cos(angle) * enemy.speed * dt;
+                       enemy.y += Math.sin(angle) * enemy.speed * dt;
                   }
-                  enemy.attackTimer = enemy.attackCooldown; enemy.state = 'CHASE';
+
+                  if (enemy.attackTimer <= 0) {
+                      enemy.state = 'PREPARING';
+                      enemy.telegraphTimer = enemy.telegraphDuration;
+                  }
+              } else if (enemy.state === 'PREPARING') {
+                  enemy.telegraphTimer -= dt;
+                  if (enemy.telegraphTimer <= 0) {
+                      // Spirit Volley (3 homing shots)
+                      const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                      world.projectiles.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, vx: Math.cos(angle)*350, vy: Math.sin(angle)*350, radius: 8, damage: enemy.damage, owner: 'ENEMY', lifeTime: 3, color: '#4ade80' });
+                      world.projectiles.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, vx: Math.cos(angle - 0.3)*350, vy: Math.sin(angle - 0.3)*350, radius: 8, damage: enemy.damage, owner: 'ENEMY', lifeTime: 3, color: '#4ade80' });
+                      world.projectiles.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, vx: Math.cos(angle + 0.3)*350, vy: Math.sin(angle + 0.3)*350, radius: 8, damage: enemy.damage, owner: 'ENEMY', lifeTime: 3, color: '#4ade80' });
+                      
+                      enemy.state = 'CHASE';
+                      enemy.attackTimer = enemy.attackCooldown;
+                  }
+              }
+          }
+      }
+      
+      // --- STANDARD ENEMY AI (Existing Logic) ---
+      else {
+          // 1. BURROWING LOGIC
+          if (enemy.isBurrower && enemy.state === 'BURROWED') {
+              if (distToPlayer < enemy.aggroRange) {
+                  // Pop up
+                  enemy.state = 'CHASE';
+                  world.particles.push({ id: Math.random().toString(), x: enemy.x, y: enemy.y, vx: 0, vy: 0, life: 0.5, maxLife: 0.5, size: 30, color: '#d4a373' });
+              }
+          } 
+          // 2. STANDARD AI (Idle/Chase/Attack)
+          else if (enemy.state !== 'BURROWED') {
+              if (enemy.attackTimer > 0) enemy.attackTimer -= dt;
+
+              if (enemy.state === 'IDLE') {
+                  if (distToPlayer < enemy.aggroRange) { enemy.state = 'CHASE'; }
+                  else {
+                      // Patrol Logic
+                      if (enemy.patrolTimer > 0) enemy.patrolTimer -= dt;
+                      else {
+                          if (!enemy.patrolTarget) { const angle = Math.random() * Math.PI * 2; const dist = Math.random() * 150; enemy.patrolTarget = { x: enemy.originX + Math.cos(angle) * dist, y: enemy.originY + Math.sin(angle) * dist }; enemy.patrolTimer = 2 + Math.random() * 3; } else { enemy.patrolTarget = undefined; enemy.patrolTimer = 1 + Math.random() * 2; }
+                      }
+                      if (enemy.patrolTarget) { const dx = enemy.patrolTarget.x - enemy.x; const dy = enemy.patrolTarget.y - enemy.y; const dist = Math.hypot(dx, dy); if (dist > 5) { enemy.x += (dx / dist) * (enemy.speed * 0.5) * dt; } else { enemy.patrolTarget = undefined; enemy.patrolTimer = 1; } }
+                  }
+              }
+              else if (enemy.state === 'CHASE') {
+                  if (enemy.attackTimer <= 0 && distToPlayer < enemy.attackRange) {
+                      enemy.state = 'PREPARING';
+                      enemy.targetPos = { x: player.x, y: player.y };
+                      enemy.telegraphTimer = enemy.telegraphDuration;
+                  } else {
+                      // Move towards player
+                      // Ranged units try to stay at range, melee charge
+                      const desiredDist = enemy.isRanged ? enemy.attackRange * 0.8 : 0;
+                      if (distToPlayer > desiredDist) {
+                          const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                          enemy.x += Math.cos(angle) * enemy.speed * dt;
+                          enemy.y += Math.sin(angle) * enemy.speed * dt;
+                      }
+                  }
+              }
+              else if (enemy.state === 'PREPARING') {
+                  enemy.telegraphTimer -= dt;
+                  if (enemy.telegraphTimer <= 0) {
+                      enemy.state = 'ATTACKING';
+                      
+                      // EXECUTE ATTACK
+                      if (enemy.isRanged) {
+                          // Fire Projectile
+                          const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                          world.projectiles.push({
+                              id: Math.random().toString(),
+                              x: enemy.x, y: enemy.y,
+                              vx: Math.cos(angle) * 350,
+                              vy: Math.sin(angle) * 350,
+                              radius: 5, damage: enemy.damage, owner: 'ENEMY', lifeTime: 3.0, color: '#ef4444'
+                          });
+                      } else {
+                          // Melee / AoE
+                          const explosionRadius = 40;
+                          if (enemy.targetPos && distance(enemy.targetPos, player) < explosionRadius && !player.isDodging) {
+                              player.hp -= enemy.damage;
+                              player.lastCombatTime = performance.now();
+                              world.texts.push({id: Math.random().toString(), x: player.x, y: player.y, text: `-${enemy.damage}`, color: "#ef4444", life: 0.5, vy: -30});
+                          }
+                          // Visual explosion
+                          if (enemy.targetPos) world.particles.push({id: Math.random().toString(), x: enemy.targetPos.x, y: enemy.targetPos.y, vx: 0, vy: 0, life: 0.4, maxLife: 0.4, size: explosionRadius, color: 'rgba(239, 68, 68, 0.5)'});
+                      }
+
+                      enemy.attackTimer = enemy.attackCooldown;
+                      enemy.state = 'CHASE';
+                  }
               }
           }
       }
@@ -296,7 +458,7 @@ export default function App() {
     world.camera.x += (player.x - world.camera.x) * camSpeed * dt;
     world.camera.y += (player.y - world.camera.y) * camSpeed * dt;
 
-  }, [gameState, dungeonTimer]);
+  }, [gameState, dungeonTimer, currentMission]);
 
   const handleUpgradeStat = (stat: 'strength' | 'agility' | 'vitality' | 'perception' | 'intelligence') => {
       const p = worldRef.current.player;
@@ -318,23 +480,47 @@ export default function App() {
           return;
       }
 
-      const { tiles, startPos, bossPos, rooms } = generateDungeonMap();
-      w.tiles = tiles; w.width = DUNGEON_WIDTH * TILE_SIZE; w.height = DUNGEON_HEIGHT * TILE_SIZE; w.player.x = startPos.x; w.player.y = startPos.y;
+      setCurrentMission(mission);
+      const { tiles, startPos, bossPos, rooms, width, height } = generateDungeonMap(mission.theme, mission.rank);
+      w.tiles = tiles; w.width = width; w.height = height; w.player.x = startPos.x; w.player.y = startPos.y;
       w.enemies = []; w.items = []; w.xpOrbs = []; w.projectiles = [];
+      w.theme = mission.theme;
+      
+      const themeEnemies = THEME_ENEMIES[mission.theme];
+      const bossKey = THEME_BOSSES[mission.theme];
       
       for(let i=1; i<rooms.length-1; i++) {
           const room = rooms[i];
           const count = Math.floor(Math.random() * 3) + 1;
           for(let k=0; k<count; k++) {
-              const isCaster = Math.random() > 0.7;
-              const stats = isCaster ? ENEMY_TYPES.CASTER : ENEMY_TYPES.GRUNT;
+              const enemyKey = themeEnemies[Math.floor(Math.random() * themeEnemies.length)];
+              const stats = BASE_ENEMIES[enemyKey];
+              
               const ex = (room.x + Math.random()*room.w) * TILE_SIZE;
               const ey = (room.y + Math.random()*room.h) * TILE_SIZE;
-              w.enemies.push({ id: `e_${i}_${k}`, x: ex, y: ey, type: isCaster ? 'CASTER' : 'GRUNT', state: 'IDLE', ...(stats as any), maxHp: stats.hp, attackTimer: 0, telegraphTimer: 0, telegraphDuration: 1.5, aggroRange: 300, attackRange: isCaster ? 250 : 30, attackCooldown: 2, originX: ex, originY: ey, patrolTimer: 0, isDead: false });
+              
+              w.enemies.push({ 
+                  id: `e_${i}_${k}`, x: ex, y: ey, 
+                  ...stats, 
+                  maxHp: stats.hp, 
+                  originX: ex, originY: ey, patrolTimer: 0, isDead: false,
+                  attackTimer: 0, telegraphTimer: 0
+              });
           }
       }
-      const bossMaxHp = ENEMY_TYPES.BOSS.hp * mission.difficulty;
-      w.enemies.push({ id: 'BOSS', x: bossPos.x, y: bossPos.y, type: 'BOSS', state: 'IDLE', ...(ENEMY_TYPES.BOSS as any), maxHp: bossMaxHp, hp: bossMaxHp, damage: ENEMY_TYPES.BOSS.damage * (1 + mission.difficulty * 0.1), attackTimer: 0, telegraphTimer: 0, telegraphDuration: 1.0, aggroRange: 500, attackRange: 150, attackCooldown: 3, originX: bossPos.x, originY: bossPos.y, patrolTimer: 0, isDead: false });
+      
+      // Boss
+      const bossStats = BASE_ENEMIES[bossKey];
+      const bossMaxHp = bossStats.hp * mission.difficulty;
+      
+      w.enemies.push({ 
+          id: 'BOSS', x: bossPos.x, y: bossPos.y, 
+          ...bossStats,
+          maxHp: bossMaxHp, hp: bossMaxHp, 
+          damage: bossStats.damage * (1 + mission.difficulty * 0.1), 
+          originX: bossPos.x, originY: bossPos.y, patrolTimer: 0, isDead: false,
+          attackTimer: 0, telegraphTimer: 0
+      });
 
       setDungeonTimer(mission.timeLeft);
       setGameState(GameState.DUNGEON);
@@ -360,6 +546,7 @@ export default function App() {
       
       setGameState(GameState.MENU);
       setMissions(generateMissions(1));
+      setCurrentMission(null);
   };
 
   // --- UPDATED INVENTORY LOGIC ---

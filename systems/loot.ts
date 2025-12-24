@@ -1,6 +1,5 @@
-
 import { Item, Rarity, EquipmentSlot, WeaponType, StatType, ScalingGrade, ItemAffix, ExperienceOrb } from '../types';
-import { RARITY_COLORS, ITEM_SETS, SLOT_STAT_MULTIPLIERS } from '../constants';
+import { RARITY_COLORS, STANDARD_SETS, BOSS_SETS, SLOT_STAT_MULTIPLIERS } from '../constants';
 
 export const generateLoot = (x: number, y: number, level: number): Item & {x: number, y: number} => {
   const rand = Math.random();
@@ -9,6 +8,45 @@ export const generateLoot = (x: number, y: number, level: number): Item & {x: nu
   else if (rand > 0.85) rarity = Rarity.EPIC;
   else if (rand > 0.6) rarity = Rarity.RARE;
 
+  return generateItem(x, y, level, rarity);
+};
+
+export const generateBossLoot = (x: number, y: number, level: number, bossId: string, rank: string): Item & {x: number, y: number} => {
+    // Rarity depends on Dungeon Rank
+    let rarity = Rarity.RARE;
+    if (rank === 'E' || rank === 'D') rarity = Rarity.RARE;
+    else if (rank === 'C' || rank === 'B') rarity = Rarity.EPIC;
+    else if (rank === 'A' || rank === 'S') rarity = Rarity.LEGENDARY;
+
+    const bossSet = BOSS_SETS[bossId];
+    if (!bossSet) return generateItem(x, y, level, rarity); // Fallback
+
+    return generateItem(x, y, level, rarity, bossSet);
+};
+
+export const generateXpOrbs = (x: number, y: number, amount: number): ExperienceOrb[] => {
+    const orbs: ExperienceOrb[] = [];
+    // Split XP into multiple orbs for visual effect, but cap at 10 to avoid performance hit
+    const count = Math.max(1, Math.min(10, Math.ceil(amount / 5))); 
+    const valPerOrb = Math.ceil(amount / count);
+
+    for(let i=0; i<count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 50 + Math.random() * 150;
+        orbs.push({
+            id: Math.random().toString(),
+            x, y,
+            value: valPerOrb,
+            radius: 3 + Math.random() * 3,
+            color: '#22d3ee', // Cyan-400
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed
+        });
+    }
+    return orbs;
+};
+
+const generateItem = (x: number, y: number, level: number, rarity: Rarity, forcedSet?: {name: string, baseStat: StatType}): Item & {x: number, y: number} => {
   // Decide Slot (Weighted: Weapon 20%, Armor 50%, Accessory 30%)
   const slotRoll = Math.random();
   let slot: EquipmentSlot = 'MAIN_HAND';
@@ -17,7 +55,7 @@ export const generateLoot = (x: number, y: number, level: number): Item & {x: nu
       const armorSlots: EquipmentSlot[] = ['HEAD', 'CHEST', 'LEGS', 'BOOTS', 'GLOVES', 'CAPE'];
       slot = armorSlots[Math.floor(Math.random() * armorSlots.length)];
   } else {
-      const accSlots: EquipmentSlot[] = ['NECK', 'RING1']; // RING1 used for generation, can equip to RING2
+      const accSlots: EquipmentSlot[] = ['NECK', 'RING1']; 
       slot = accSlots[Math.floor(Math.random() * accSlots.length)];
   }
 
@@ -50,18 +88,23 @@ export const generateLoot = (x: number, y: number, level: number): Item & {x: nu
       
       const prefix = rarity === Rarity.COMMON ? 'Rusty' : rarity === Rarity.RARE ? 'Iron' : rarity === Rarity.EPIC ? 'Shadow' : 'Demon';
       
+      if (forcedSet) {
+          name = `${forcedSet.name} Weapon`; 
+      } else {
+        if (wType === WeaponType.SWORD) name = `${prefix} Blade`;
+        else if (wType === WeaponType.BOW) name = `${prefix} Longbow`;
+        else if (wType === WeaponType.STAFF) name = `${prefix} Staff`;
+      }
+
       if (wType === WeaponType.SWORD) {
-          name = `${prefix} Blade`;
           scalings.s = rarity === Rarity.LEGENDARY ? 'S' : rarity === Rarity.EPIC ? 'A' : rarity === Rarity.RARE ? 'B' : 'C';
           scalings.a = 'D';
           baseSpeed = 1.5; baseRange = 80;
       } else if (wType === WeaponType.BOW) {
-          name = `${prefix} Longbow`;
           scalings.a = rarity === Rarity.LEGENDARY ? 'S' : rarity === Rarity.EPIC ? 'A' : rarity === Rarity.RARE ? 'B' : 'C';
           scalings.s = 'E';
           baseSpeed = 2; baseRange = 400;
       } else if (wType === WeaponType.STAFF) {
-          name = `${prefix} Staff`;
           scalings.i = rarity === Rarity.LEGENDARY ? 'S' : rarity === Rarity.EPIC ? 'A' : rarity === Rarity.RARE ? 'B' : 'C';
           baseSpeed = 0.8; baseRange = 400;
       }
@@ -69,8 +112,8 @@ export const generateLoot = (x: number, y: number, level: number): Item & {x: nu
   // 2. ARMOR / ACCESSORY GENERATION
   else {
       type = (slot === 'NECK' || slot === 'RING1') ? 'ACCESSORY' : 'ARMOR';
-      // Pick a Set
-      const set = ITEM_SETS[Math.floor(Math.random() * ITEM_SETS.length)];
+      
+      const set = forcedSet || STANDARD_SETS[Math.floor(Math.random() * STANDARD_SETS.length)];
       setName = set.name;
       
       const slotNameMap: Record<string, string> = {
@@ -78,9 +121,10 @@ export const generateLoot = (x: number, y: number, level: number): Item & {x: nu
       };
       name = `${set.name} ${slotNameMap[slot] || 'Item'}`;
 
-      // Calculate Fixed Attribute based on Slot Multiplier and Quality
+      // Calculate Fixed Attribute based on Slot Multiplier, Quality AND Power
       const multiplier = SLOT_STAT_MULTIPLIERS[slot] || 1;
-      const statVal = Math.ceil(multiplier * quality * (1 + (level * 0.1)));
+      // Fixed: Added 'power' to the calculation below
+      const statVal = Math.ceil(multiplier * quality * power * (1 + (level * 0.1)));
       baseStat = { type: set.baseStat, value: statVal };
   }
 
@@ -115,16 +159,4 @@ export const generateLoot = (x: number, y: number, level: number): Item & {x: nu
     color: RARITY_COLORS[rarity],
     price: price
   };
-};
-
-export const generateXpOrbs = (x: number, y: number, amount: number): ExperienceOrb[] => {
-    const orbs: ExperienceOrb[] = [];
-    const orbValue = 10;
-    const count = Math.ceil(amount / orbValue);
-    for(let i=0; i<count; i++) {
-        const angle = Math.random() * Math.PI * 2;
-        const speed = 50 + Math.random() * 100;
-        orbs.push({ id: Math.random().toString(), x, y, value: orbValue, radius: 4 + Math.random() * 2, color: '#00ffff', vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed });
-    }
-    return orbs;
-};
+}

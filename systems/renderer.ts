@@ -1,6 +1,6 @@
 
 import { GameWorld, Enemy, TileType, WeaponType, Rarity } from '../types';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, TILE_SIZE, OUT_OF_COMBAT_DELAY } from '../constants';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, TILE_SIZE, OUT_OF_COMBAT_DELAY, THEME_CONFIG } from '../constants';
 import { calculateVisibility } from './visibility';
 
 interface RenderProps {
@@ -16,9 +16,10 @@ export const renderGame = ({ canvas, maskCanvas, world, activeBoss, time }: Rend
     if (!ctx) return;
 
     const player = world.player;
+    const theme = THEME_CONFIG[world.theme] || THEME_CONFIG.CAVE;
     
-    // Clear Screen
-    ctx.fillStyle = '#000000'; 
+    // Clear Screen (Ambient)
+    ctx.fillStyle = theme.ambient; 
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
     ctx.save(); 
@@ -34,8 +35,15 @@ export const renderGame = ({ canvas, maskCanvas, world, activeBoss, time }: Rend
         for (let x = startX; x < endX; x++) {
             if(y >= 0 && y < world.tiles.length && x >= 0 && x < world.tiles[0].length) {
                 const tile = world.tiles[y][x];
-                if (tile === TileType.FLOOR) { ctx.fillStyle = '#334155'; ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE + 1, TILE_SIZE + 1); } 
-                else { ctx.fillStyle = '#1e293b'; ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE + 1, TILE_SIZE + 1); }
+                if (tile === TileType.FLOOR) { 
+                    ctx.fillStyle = theme.floor; 
+                    // Add some noise texture to floor
+                    ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE + 1, TILE_SIZE + 1); 
+                } 
+                else { 
+                    ctx.fillStyle = theme.wall; 
+                    ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE + 1, TILE_SIZE + 1); 
+                }
             }
         }
     }
@@ -88,6 +96,23 @@ export const renderGame = ({ canvas, maskCanvas, world, activeBoss, time }: Rend
 
     // --- DRAW ENEMIES ---
     world.enemies.forEach(e => {
+        if (e.state === 'BURROWED') {
+            // Draw a dust pile or disturbance
+             ctx.save();
+             ctx.translate(e.x, e.y);
+             ctx.fillStyle = 'rgba(0,0,0,0.3)';
+             ctx.beginPath();
+             ctx.ellipse(0, 0, 15, 8, 0, 0, Math.PI * 2);
+             ctx.fill();
+             // Dust particles
+             if (Math.random() > 0.8) {
+                 ctx.fillStyle = '#d4a373';
+                 ctx.fillRect((Math.random()-0.5)*20, (Math.random()-0.5)*10, 2, 2);
+             }
+             ctx.restore();
+             return;
+        }
+
         ctx.save(); 
         ctx.translate(e.x, e.y);
         
@@ -108,13 +133,28 @@ export const renderGame = ({ canvas, maskCanvas, world, activeBoss, time }: Rend
             ctx.stroke(); 
             ctx.restore(); 
         }
+
+        // Shield Visual
+        if (e.hasShield) {
+            ctx.strokeStyle = '#60a5fa';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, e.radius + 4, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 0.3;
+            ctx.fillStyle = '#3b82f6';
+            ctx.fill();
+            ctx.globalAlpha = 1.0;
+        }
         
         // Body
         ctx.fillStyle = e.color; 
+        if (e.isPhasing) ctx.globalAlpha = 0.6; // Ghostly look
         if (e.state === 'ATTACKING') ctx.fillStyle = '#fff';
         ctx.beginPath(); 
         ctx.arc(0, 0, e.radius, 0, Math.PI * 2); 
         ctx.fill();
+        ctx.globalAlpha = 1.0;
         
         // HP Bar
         const hpPct = e.hp / e.maxHp; 
@@ -188,7 +228,20 @@ export const renderGame = ({ canvas, maskCanvas, world, activeBoss, time }: Rend
     }
 
     // --- DRAW PARTICLES & PROJECTILES & TEXT ---
-    world.projectiles.forEach(p => { ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fill(); });
+    world.projectiles.forEach(p => { 
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.fillStyle = p.color; 
+        ctx.beginPath(); 
+        ctx.arc(0, 0, p.radius, 0, Math.PI * 2); 
+        ctx.fill();
+        // Glow effect
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.restore(); 
+    });
+
     world.particles.forEach(p => { 
         ctx.save(); 
         ctx.globalAlpha = p.life / p.maxLife; 
@@ -271,7 +324,10 @@ export const renderGame = ({ canvas, maskCanvas, world, activeBoss, time }: Rend
             };
 
             drawPlayerLight();
-            world.projectiles.forEach(p => { if (p.owner === 'PLAYER') drawSimpleLight(p.x, p.y, 100, 0.8); });
+            world.projectiles.forEach(p => { 
+                const rad = p.owner === 'PLAYER' ? 100 : 60;
+                drawSimpleLight(p.x, p.y, rad, 0.8); 
+            });
             if (activeBoss) { drawSimpleLight(activeBoss.x, activeBoss.y, 250, 0.6); }
             world.items.forEach(item => { 
                 const radius = item.rarity === Rarity.LEGENDARY ? 100 : item.rarity === Rarity.EPIC ? 80 : 50; 
@@ -279,6 +335,9 @@ export const renderGame = ({ canvas, maskCanvas, world, activeBoss, time }: Rend
                 drawSimpleLight(item.x, item.y, radius, intensity); 
             });
             world.xpOrbs.forEach(orb => { drawSimpleLight(orb.x, orb.y, 40, 0.4); });
+            world.enemies.forEach(e => {
+                if (e.isPhasing) drawSimpleLight(e.x, e.y, 80, 0.3); // Spirits glow slightly
+            });
             
             // Apply Mask
             ctx.save(); 

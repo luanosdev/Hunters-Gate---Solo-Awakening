@@ -1,22 +1,25 @@
 
-import { PortalMission, TileType } from '../types';
-import { DUNGEON_WIDTH, DUNGEON_HEIGHT, TILE_SIZE } from '../constants';
+import { PortalMission, TileType, DungeonTheme } from '../types';
+import { TILE_SIZE, RANK_META } from '../constants';
 
 export const generateMissions = (playerLevel: number): PortalMission[] => {
   const missions: PortalMission[] = [];
   const ranks = ['E', 'D', 'C', 'B', 'A', 'S'];
+  const themes: DungeonTheme[] = ['CAVE', 'DESERT', 'FOREST'];
   const baseDifficulty = Math.ceil(playerLevel / 5);
 
   for (let i = 0; i < 3; i++) {
     const rankIndex = Math.min(5, Math.max(0, Math.floor((playerLevel - 1) / 10) + Math.floor(Math.random() * 3) - 1));
     const rank = ranks[rankIndex];
+    const theme = themes[Math.floor(Math.random() * themes.length)];
     
     missions.push({
       id: Math.random().toString(),
       rank,
+      theme,
       timeLeft: 300 + Math.random() * 300,
       difficulty: baseDifficulty + Math.floor(Math.random() * 2),
-      description: `Clear the ${rank}-Rank Gate`,
+      description: `Clear the ${theme.charAt(0) + theme.slice(1).toLowerCase()} Gate`,
       enemyCount: 20 + Math.floor(Math.random() * 20),
       bossType: 'Boss'
     });
@@ -24,39 +27,61 @@ export const generateMissions = (playerLevel: number): PortalMission[] => {
   return missions;
 };
 
-export const generateDungeonMap = () => {
-    const width = DUNGEON_WIDTH;
-    const height = DUNGEON_HEIGHT;
+export const generateDungeonMap = (theme: DungeonTheme, rank: string) => {
+    // Rank determines size
+    const rankMult = RANK_META[rank]?.sizeMult || 1.0;
+    const width = Math.floor(70 * rankMult);
+    const height = Math.floor(70 * rankMult);
+
     const tiles: TileType[][] = Array(height).fill(null).map(() => Array(width).fill(TileType.WALL));
     const rooms: {x: number, y: number, w: number, h: number}[] = [];
 
-    const MIN_ROOM_SIZE = 6;
-    const MAX_ROOM_SIZE = 12;
-    const MAX_ROOMS = 15;
+    // Theme determines structure parameters
+    let minRoom = 6;
+    let maxRoom = 12;
+    let maxRooms = Math.floor(15 * rankMult);
+    
+    if (theme === 'DESERT') {
+        minRoom = 15;
+        maxRoom = 30;
+        maxRooms = Math.floor(6 * rankMult); // Few giant rooms
+    } else if (theme === 'CAVE') {
+        minRoom = 6;
+        maxRoom = 12; // Standard
+    } else if (theme === 'FOREST') {
+        minRoom = 8;
+        maxRoom = 18; // Varied
+    }
 
-    for (let i = 0; i < MAX_ROOMS; i++) {
-        const w = Math.floor(Math.random() * (MAX_ROOM_SIZE - MIN_ROOM_SIZE + 1)) + MIN_ROOM_SIZE;
-        const h = Math.floor(Math.random() * (MAX_ROOM_SIZE - MIN_ROOM_SIZE + 1)) + MIN_ROOM_SIZE;
+    for (let i = 0; i < maxRooms; i++) {
+        const w = Math.floor(Math.random() * (maxRoom - minRoom + 1)) + minRoom;
+        const h = Math.floor(Math.random() * (maxRoom - minRoom + 1)) + minRoom;
+        
+        // Ensure bounds
         const x = Math.floor(Math.random() * (width - w - 2)) + 1;
         const y = Math.floor(Math.random() * (height - h - 2)) + 1;
 
         const newRoom = { x, y, w, h };
         
         let failed = false;
+        // Collision check between rooms
         for (const other of rooms) {
-            if (x < other.x + other.w + 1 && x + w + 1 > other.x && y < other.y + other.h + 1 && y + h + 1 > other.y) {
+            // Add padding
+            if (x < other.x + other.w + 2 && x + w + 2 > other.x && y < other.y + other.h + 2 && y + h + 2 > other.y) {
                 failed = true;
                 break;
             }
         }
 
         if (!failed) {
+            // Carve Room
             for (let ry = y; ry < y + h; ry++) {
                 for (let rx = x; rx < x + w; rx++) {
                     tiles[ry][rx] = TileType.FLOOR;
                 }
             }
 
+            // Connect to previous room
             if (rooms.length > 0) {
                 const prev = rooms[rooms.length - 1];
                 const prevCX = Math.floor(prev.x + prev.w / 2);
@@ -64,26 +89,46 @@ export const generateDungeonMap = () => {
                 const newCX = Math.floor(x + w / 2);
                 const newCY = Math.floor(y + h / 2);
 
+                // For Desert, make wide corridors
+                const corridorWidth = theme === 'DESERT' ? 3 : 1;
+
                 if (Math.random() > 0.5) {
                     const minX = Math.min(prevCX, newCX);
                     const maxX = Math.max(prevCX, newCX);
-                    for (let cx = minX; cx <= maxX; cx++) tiles[prevCY][cx] = TileType.FLOOR;
+                    for (let cx = minX; cx <= maxX; cx++) {
+                        for(let cw = 0; cw < corridorWidth; cw++) tiles[prevCY + cw][cx] = TileType.FLOOR;
+                    }
                     
                     const minY = Math.min(prevCY, newCY);
                     const maxY = Math.max(prevCY, newCY);
-                    for (let cy = minY; cy <= maxY; cy++) tiles[cy][newCX] = TileType.FLOOR;
+                    for (let cy = minY; cy <= maxY; cy++) {
+                         for(let cw = 0; cw < corridorWidth; cw++) tiles[cy][newCX + cw] = TileType.FLOOR;
+                    }
                 } else {
                     const minY = Math.min(prevCY, newCY);
                     const maxY = Math.max(prevCY, newCY);
-                    for (let cy = minY; cy <= maxY; cy++) tiles[cy][prevCX] = TileType.FLOOR;
+                    for (let cy = minY; cy <= maxY; cy++) {
+                        for(let cw = 0; cw < corridorWidth; cw++) tiles[cy][prevCX + cw] = TileType.FLOOR;
+                    }
 
                     const minX = Math.min(prevCX, newCX);
                     const maxX = Math.max(prevCX, newCX);
-                    for (let cx = minX; cx <= maxX; cx++) tiles[newCY][cx] = TileType.FLOOR;
+                    for (let cx = minX; cx <= maxX; cx++) {
+                        for(let cw = 0; cw < corridorWidth; cw++) tiles[newCY + cw][cx] = TileType.FLOOR;
+                    }
                 }
             }
             rooms.push(newRoom);
         }
+    }
+
+    // Safety check if generation failed to make rooms
+    if (rooms.length === 0) {
+        // Fallback room
+        const cx = Math.floor(width/2);
+        const cy = Math.floor(height/2);
+        for(let y=cy-5; y<cy+5; y++) for(let x=cx-5; x<cx+5; x++) tiles[y][x] = TileType.FLOOR;
+        rooms.push({x: cx-5, y: cy-5, w: 10, h: 10});
     }
 
     const startRoom = rooms[0];
@@ -92,5 +137,5 @@ export const generateDungeonMap = () => {
     const startPos = { x: (startRoom.x + startRoom.w / 2) * TILE_SIZE, y: (startRoom.y + startRoom.h / 2) * TILE_SIZE };
     const bossPos = { x: (endRoom.x + endRoom.w / 2) * TILE_SIZE, y: (endRoom.y + endRoom.h / 2) * TILE_SIZE };
 
-    return { tiles, startPos, bossPos, rooms };
+    return { tiles, startPos, bossPos, rooms, width: width * TILE_SIZE, height: height * TILE_SIZE };
 };
