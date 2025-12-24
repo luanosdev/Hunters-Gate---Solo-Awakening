@@ -280,6 +280,25 @@ const calculateWeaponStats = (player: Player) => {
     return { damage: totalDamage, range, attackSpeed, bonusArc, aoeRadius };
 };
 
+// Re-calculate Player Stats (MaxHP, Damage, Speed) based on Stats
+const recalculatePlayerStats = (player: Player) => {
+    const effectiveStats = getEffectiveStats(player);
+    
+    // 1 Vitality = 5 HP. Base HP = 75 (Since initial 5 Vit gives 100 HP)
+    const newMaxHp = 75 + (effectiveStats.vitality * 5);
+    const hpRatio = player.hp / player.maxHp;
+    
+    player.maxHp = newMaxHp;
+    // Optional: Keep same percentage of HP or just clamp. Let's clamp to max.
+    player.hp = Math.min(player.hp, player.maxHp);
+    
+    const combatStats = calculateWeaponStats(player);
+    player.damage = combatStats.damage;
+    player.attackSpeed = combatStats.attackSpeed;
+    
+    return player;
+};
+
 const generateMissions = (playerLevel: number): PortalMission[] => {
   const missions: PortalMission[] = [];
   const ranks = ['E', 'D', 'C', 'B', 'A', 'S'];
@@ -741,12 +760,25 @@ export default function App() {
 
   const handleUpgradeStat = (stat: 'strength' | 'agility' | 'vitality' | 'perception' | 'intelligence') => {
       const p = worldRef.current.player;
-      if (p.attributePoints > 0) { p[stat] += 1; p.attributePoints -= 1; if (stat === 'vitality') { p.maxHp += 5; p.hp += 5; } setUiPlayer({...p}); }
+      if (p.attributePoints > 0) { 
+          p[stat] += 1; 
+          p.attributePoints -= 1; 
+          
+          recalculatePlayerStats(p);
+          setUiPlayer({...p}); 
+      }
   };
 
   const startMission = (mission: PortalMission) => {
-      const { tiles, startPos, bossPos, rooms } = generateDungeonMap();
       const w = worldRef.current;
+      
+      // Validation: Must have Main Hand equipped
+      if (!w.player.equipment.MAIN_HAND) {
+          w.texts.push({ id: Math.random().toString(), x: CANVAS_WIDTH/2, y: CANVAS_HEIGHT/2, text: "WEAPON REQUIRED!", color: "#ef4444", life: 1.5, vy: -20 });
+          return;
+      }
+
+      const { tiles, startPos, bossPos, rooms } = generateDungeonMap();
       w.tiles = tiles; w.width = DUNGEON_WIDTH * TILE_SIZE; w.height = DUNGEON_HEIGHT * TILE_SIZE; w.player.x = startPos.x; w.player.y = startPos.y;
       w.enemies = []; w.items = []; w.xpOrbs = []; w.projectiles = [];
       
@@ -770,9 +802,22 @@ export default function App() {
   };
 
   const restartGame = () => {
-      worldRef.current.player = { ...INITIAL_PLAYER };
-      worldRef.current.score = 0;
-      setScore(0);
+      // PRESERVE GOLD (SCORE)
+      const keptScore = worldRef.current.score;
+      
+      // Reset Player Structure
+      worldRef.current.player = { 
+          ...INITIAL_PLAYER, 
+          equipment: {
+              ...INITIAL_PLAYER.equipment
+          },
+          inventory: []
+      };
+      
+      // Restore Score
+      worldRef.current.score = keptScore;
+      setScore(keptScore);
+      
       setGameState(GameState.MENU);
       setMissions(generateMissions(1));
   };
@@ -804,6 +849,8 @@ export default function App() {
           if(currentEquipped) {
               player.inventory.push(currentEquipped);
           }
+          
+          recalculatePlayerStats(player);
           setUiPlayer({...player});
       }
   };
@@ -820,6 +867,8 @@ export default function App() {
       if (equipped && player.inventory.length < 20) {
           player.inventory.push(equipped);
           player.equipment[slot] = null;
+          
+          recalculatePlayerStats(player);
           setUiPlayer({...player});
       }
   };
@@ -839,6 +888,8 @@ export default function App() {
       if (equipped) {
           w.items.push({ ...equipped, x: p.x + (Math.random() - 0.5) * 50, y: p.y + (Math.random() - 0.5) * 50 });
           p.equipment[slot] = null;
+          
+          recalculatePlayerStats(p);
           setUiPlayer({...p});
       }
   };
@@ -884,11 +935,11 @@ export default function App() {
 
       if (gameState === GameState.DUNGEON) { update(dt); }
       
-      const combatStats = calculateWeaponStats(worldRef.current.player);
-      worldRef.current.player.damage = combatStats.damage;
-      worldRef.current.player.attackSpeed = combatStats.attackSpeed;
-
-      setUiPlayer(prev => ({ ...worldRef.current.player }));
+      // Update UI player reference for seamless HP bar updates
+      if (gameState === GameState.DUNGEON) {
+          setUiPlayer(prev => ({ ...worldRef.current.player }));
+      }
+      
       setScore(worldRef.current.score);
       const boss = worldRef.current.enemies.find(e => e.type === 'BOSS');
       setActiveBoss(boss || null);

@@ -119,6 +119,22 @@ export const SLOT_STAT_MULTIPLIERS: Record<EquipmentSlot, number> = {
 
 export const SHOP_ITEMS: Item[] = [
     {
+        id: 'shop_starter_rusty',
+        name: "Training Sword",
+        type: WeaponType.SWORD,
+        slot: 'MAIN_HAND',
+        rarity: Rarity.COMMON,
+        baseDamage: 10,
+        baseAttackSpeed: 1.3,
+        baseRange: 130,
+        power: 0.8,
+        quality: 0.5,
+        scaling: { strength: 'D', agility: '-', intelligence: '-' },
+        affixes: [],
+        color: RARITY_COLORS[Rarity.COMMON],
+        price: 50
+    },
+    {
         id: 'shop_sword_rare',
         name: "Knight's Blade",
         type: WeaponType.SWORD,

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Player, GameState, WeaponType, Rarity, Item, PortalMission, Enemy, EquipmentSlot } from '../types';
 import { RARITY_COLORS, DODGE_COOLDOWN, RANK_META, SHOP_ITEMS } from '../constants';
-import { Shield, Swords, Crosshair, Sparkles, Hand, Backpack, MapPin, Skull, ChevronsRight, Wind, ShoppingBag, Briefcase, Coins, Heart, Eye, Brain, BicepsFlexed, Plus, X, Shirt, Crown, Footprints, Club, Target, Circle, Diamond, Ghost } from 'lucide-react';
+import { Shield, Swords, Crosshair, Sparkles, Hand, Backpack, MapPin, Skull, ChevronsRight, Wind, ShoppingBag, Briefcase, Coins, Heart, Eye, Brain, BicepsFlexed, Plus, X, Shirt, Crown, Footprints, Club, Target, Circle, Diamond, Ghost, Lock } from 'lucide-react';
 
 interface UIProps {
   gameState: GameState;
@@ -39,6 +39,27 @@ const RarityBadge = ({ rarity }: { rarity: Rarity }) => (
     {rarity}
   </span>
 );
+
+// Helper to render consistent icons based on item type/slot
+const getItemIcon = (item: Item, size: number = 24) => {
+    if (item.type === WeaponType.SWORD) return <Swords size={size} />;
+    if (item.type === WeaponType.BOW) return <Crosshair size={size} />;
+    if (item.type === WeaponType.STAFF) return <Sparkles size={size} />;
+    
+    // Armor / Accessory mapping
+    switch (item.slot) {
+        case 'HEAD': return <Crown size={size} />;
+        case 'CHEST': return <Shirt size={size} />;
+        case 'LEGS': return <Club size={size} />; // Represents pants/leggings abstractly or use another icon
+        case 'BOOTS': return <Footprints size={size} />;
+        case 'GLOVES': return <Hand size={size} />;
+        case 'CAPE': return <Ghost size={size} />;
+        case 'NECK': return <Circle size={size} />;
+        case 'RING1': 
+        case 'RING2': return <Diamond size={size} />;
+        default: return <Shield size={size} />;
+    }
+};
 
 const ItemDetailModal = ({ item, context, onClose, actions }: { item: Item; context: 'INVENTORY' | 'GROUND' | 'EQUIPPED' | 'SHOP_BUY' | 'SHOP_SELL'; onClose: () => void; actions: React.ReactNode }) => {
     return (
@@ -171,12 +192,7 @@ export const UIOverlay: React.FC<UIProps> = ({
                     className="w-full h-full flex items-center justify-center"
                     style={{ color: RARITY_COLORS[item.rarity] }}
                   >
-                      {/* Reuse Icons based on type */}
-                      {item.type === WeaponType.SWORD && <Swords size={28} />}
-                      {item.type === WeaponType.BOW && <Crosshair size={28} />}
-                      {item.type === WeaponType.STAFF && <Sparkles size={28} />}
-                      {item.type === 'ARMOR' && <Shield size={28} />}
-                      {item.type === 'ACCESSORY' && <Diamond size={28} />}
+                      {getItemIcon(item, 28)}
                   </div>
               ) : (
                   <div className="text-slate-700">{icon}</div>
@@ -258,6 +274,8 @@ export const UIOverlay: React.FC<UIProps> = ({
     />
   );
 
+  const hasWeapon = !!player.equipment.MAIN_HAND;
+
   // --- RENDER CONTENT ---
   return (
       <>
@@ -320,10 +338,20 @@ export const UIOverlay: React.FC<UIProps> = ({
                                 {missions.map((mission) => {
                                     const meta = RANK_META[mission.rank] || RANK_META['E'];
                                     return (
-                                        <div key={mission.id} onClick={() => onStartMission(mission)} className={`relative group cursor-pointer transition-all hover:scale-105 flex flex-col justify-end bg-slate-900 border rounded-t-full overflow-hidden w-48 ${meta.heightClass}`} style={{ borderColor: meta.color, boxShadow: `0 0 20px ${meta.shadow}` }}>
+                                        <div key={mission.id} onClick={() => { if(hasWeapon) onStartMission(mission); }} className={`relative group transition-all flex flex-col justify-end bg-slate-900 border rounded-t-full overflow-hidden w-48 ${meta.heightClass} ${hasWeapon ? 'cursor-pointer hover:scale-105' : 'opacity-50 grayscale cursor-not-allowed'}`} style={{ borderColor: hasWeapon ? meta.color : '#333', boxShadow: hasWeapon ? `0 0 20px ${meta.shadow}` : 'none' }}>
                                             <div className="absolute inset-0 opacity-50 bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" style={{ backgroundColor: meta.color }}></div>
                                             <div className="absolute inset-0 bg-black/40"></div>
                                             <div className="absolute inset-0 mix-blend-overlay opacity-30 animate-pulse" style={{ backgroundColor: meta.color }}></div>
+                                            
+                                            {!hasWeapon && (
+                                                <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-20">
+                                                    <div className="bg-red-900/80 px-2 py-1 rounded border border-red-500 flex items-center gap-1">
+                                                        <Lock size={12} className="text-red-300"/>
+                                                        <span className="text-[10px] font-bold text-red-100 uppercase">Need Weapon</span>
+                                                    </div>
+                                                </div>
+                                            )}
+
                                             <div className="relative z-10 p-4 text-center">
                                                 <div className="text-6xl font-black mb-2 drop-shadow-md" style={{ color: meta.color }}>{mission.rank}</div>
                                                 <div className="text-xs text-white bg-black/50 px-2 py-1 rounded backdrop-blur-sm mb-2">{mission.description}</div>
@@ -366,11 +394,7 @@ export const UIOverlay: React.FC<UIProps> = ({
                                         {player.inventory.map((item, idx) => (
                                             <div key={item.id + idx} className="aspect-square bg-slate-900 border border-slate-700 hover:border-blue-500 rounded p-2 relative group cursor-pointer cursor-move" draggable onDragStart={(e) => handleDragStart(e, item, 'INVENTORY')} onClick={() => { setSelectedItem(item); setInteractionType('INVENTORY'); }}>
                                                 <div className="flex items-center justify-center h-full hover:scale-110 transition-transform" style={{ color: RARITY_COLORS[item.rarity] }}>
-                                                    {item.type === WeaponType.SWORD && <Swords size={20} />}
-                                                    {item.type === WeaponType.BOW && <Crosshair size={20} />}
-                                                    {item.type === WeaponType.STAFF && <Sparkles size={20} />}
-                                                    {item.type === 'ARMOR' && <Shield size={20} />}
-                                                    {item.type === 'ACCESSORY' && <Diamond size={20} />}
+                                                    {getItemIcon(item, 20)}
                                                 </div>
                                             </div>
                                         ))}
@@ -389,11 +413,7 @@ export const UIOverlay: React.FC<UIProps> = ({
                                             <div key={item.id} className="bg-slate-900 p-3 rounded flex items-center justify-between border border-slate-800 hover:border-blue-500 transition-colors cursor-pointer" onClick={() => { setSelectedItem(item); setInteractionType('SHOP_BUY'); }}>
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-10 h-10 bg-slate-800 rounded flex items-center justify-center" style={{ color: RARITY_COLORS[item.rarity] }}>
-                                                        {item.type === WeaponType.SWORD && <Swords size={20} />}
-                                                        {item.type === WeaponType.BOW && <Crosshair size={20} />}
-                                                        {item.type === WeaponType.STAFF && <Sparkles size={20} />}
-                                                        {item.type === 'ARMOR' && <Shield size={20} />}
-                                                        {item.type === 'ACCESSORY' && <Diamond size={20} />}
+                                                        {getItemIcon(item, 20)}
                                                     </div>
                                                     <div>
                                                         <p className="font-bold text-sm" style={{ color: RARITY_COLORS[item.rarity] }}>{item.name}</p>
@@ -412,7 +432,7 @@ export const UIOverlay: React.FC<UIProps> = ({
                                             <div key={item.id + idx} className="bg-slate-900 p-2 rounded flex flex-col gap-2 border border-slate-800 group relative cursor-pointer" onClick={() => { setSelectedItem(item); setInteractionType('SHOP_SELL'); }}>
                                                 <div className="flex items-center gap-2">
                                                     <div className="text-xs" style={{ color: RARITY_COLORS[item.rarity] }}>
-                                                        {item.type === 'ARMOR' ? <Shield size={16} /> : <Swords size={16} />}
+                                                        {getItemIcon(item, 16)}
                                                     </div>
                                                     <span className="text-xs font-bold truncate flex-1" style={{ color: RARITY_COLORS[item.rarity] }}>{item.name}</span>
                                                 </div>
@@ -501,11 +521,7 @@ const InGameHUD: React.FC<any> = ({ player, dungeonTimer, activeBoss, inventoryO
                         {groundItems.map((item: any, idx: number) => (
                            <div key={item.id + idx} draggable onDragStart={(e) => handleDragStart(e, item, 'GROUND')} onClick={() => onItemClick(item, 'GROUND')} className="bg-slate-800 border border-slate-700 p-2 rounded flex items-center gap-3 cursor-move hover:bg-slate-700 hover:border-blue-500 transition-all">
                               <div className="w-10 h-10 bg-black/40 rounded flex items-center justify-center" style={{ color: RARITY_COLORS[item.rarity as Rarity] }}>
-                                 {item.type === WeaponType.SWORD && <Swords size={20} />}
-                                 {item.type === WeaponType.BOW && <Crosshair size={20} />}
-                                 {item.type === WeaponType.STAFF && <Sparkles size={20} />}
-                                 {item.type === 'ARMOR' && <Shield size={20} />}
-                                 {item.type === 'ACCESSORY' && <Diamond size={20} />}
+                                 {getItemIcon(item, 20)}
                               </div>
                               <div className="flex-1"><p className="font-bold text-sm" style={{ color: RARITY_COLORS[item.rarity as Rarity] }}>{item.name}</p></div>
                            </div>
@@ -554,11 +570,7 @@ const InGameHUD: React.FC<any> = ({ player, dungeonTimer, activeBoss, inventoryO
                             {player.inventory.map((item, idx) => (
                                 <div key={item.id + idx} className="aspect-square bg-slate-800 border border-slate-600 hover:border-blue-400 cursor-pointer rounded p-2 flex flex-col items-center justify-between group relative cursor-move hover:scale-105 transition-transform" draggable onDragStart={(e) => handleDragStart(e, item, 'INVENTORY')} onClick={() => onItemClick(item, 'INVENTORY')}>
                                     <div style={{ color: RARITY_COLORS[item.rarity] }}>
-                                        {item.type === WeaponType.SWORD && <Swords size={24} />}
-                                        {item.type === WeaponType.BOW && <Crosshair size={24} />}
-                                        {item.type === WeaponType.STAFF && <Sparkles size={24} />}
-                                        {item.type === 'ARMOR' && <Shield size={24} />}
-                                        {item.type === 'ACCESSORY' && <Diamond size={24} />}
+                                        {getItemIcon(item, 24)}
                                     </div>
                                     <p className="text-[10px] text-center w-full truncate text-slate-300 group-hover:text-white">{item.name}</p>
                                 </div>
