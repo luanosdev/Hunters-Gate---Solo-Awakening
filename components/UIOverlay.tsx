@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Player, GameState, WeaponType, Rarity, Item, PortalMission, Enemy, EquipmentSlot } from '../types';
 import { RARITY_COLORS, DODGE_COOLDOWN, RANK_META, SHOP_ITEMS } from '../constants';
-import { Shield, Swords, Crosshair, Sparkles, Hand, Backpack, MapPin, Skull, ChevronsRight, Wind, ShoppingBag, Briefcase, Coins, Heart, Eye, Brain, BicepsFlexed, Plus, X, Shirt, Crown, Footprints, Club, Target, Circle, Diamond, Ghost, Lock } from 'lucide-react';
+import { Shield, Swords, Crosshair, Sparkles, Hand, Backpack, MapPin, Skull, ChevronsRight, Wind, ShoppingBag, Briefcase, Coins, Heart, Eye, Brain, Plus, X, Shirt, Crown, Footprints, Club, Target, Circle, Diamond, Ghost, Lock } from 'lucide-react';
 
 interface UIProps {
   gameState: GameState;
@@ -302,7 +302,7 @@ export const UIOverlay: React.FC<UIProps> = ({
                     onDrop={onDrop}
                     onDropEquipped={onDropEquipped}
                     onPickup={onPickup}
-                    onItemClick={(item, type) => { setSelectedItem(item); setInteractionType(type); }}
+                    onItemClick={(item, type) => { setSelectedItem(item); setInteractionType(type as any); }}
                     renderEquipSlot={renderEquipSlot} // Pass the render function down
                     handleDropOnInventory={handleDropOnInventory}
                     handleDropOnVicinity={handleDropOnVicinity}
@@ -451,7 +451,26 @@ export const UIOverlay: React.FC<UIProps> = ({
   );
 };
 
-const InGameHUD: React.FC<any> = ({ player, dungeonTimer, activeBoss, inventoryOpen, groundItems, onEquip, onEquipFromGround, onUnequip, onDrop, onDropEquipped, onPickup, onItemClick, renderEquipSlot, handleDropOnInventory, handleDropOnVicinity, handleDragStart }) => {
+interface InGameHUDProps {
+  player: Player;
+  dungeonTimer?: number;
+  activeBoss: Enemy | null;
+  inventoryOpen: boolean;
+  groundItems: (Item & { x: number, y: number })[];
+  onEquip: (item: Item, targetSlot?: EquipmentSlot) => void;
+  onEquipFromGround?: (item: Item) => void;
+  onUnequip: (slot: EquipmentSlot) => void;
+  onDrop: (item: Item) => void;
+  onDropEquipped?: (slot: EquipmentSlot) => void;
+  onPickup: (item: Item) => void;
+  onItemClick: (item: Item, type: string) => void;
+  renderEquipSlot: (slot: EquipmentSlot, icon: React.ReactNode) => React.ReactNode;
+  handleDropOnInventory: (e: React.DragEvent) => void;
+  handleDropOnVicinity: (e: React.DragEvent) => void;
+  handleDragStart: (e: React.DragEvent, item: Item, source: 'INVENTORY' | 'GROUND' | 'EQUIPPED', slot?: EquipmentSlot) => void;
+}
+
+const InGameHUD: React.FC<InGameHUDProps> = ({ player, dungeonTimer, activeBoss, inventoryOpen, groundItems, onEquip, onEquipFromGround, onUnequip, onDrop, onDropEquipped, onPickup, onItemClick, renderEquipSlot, handleDropOnInventory, handleDropOnVicinity, handleDragStart }) => {
     
     const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
 
@@ -518,12 +537,12 @@ const InGameHUD: React.FC<any> = ({ player, dungeonTimer, activeBoss, inventoryO
                      <div className="p-3 bg-slate-800 border-b border-slate-700 flex justify-between items-center"><h3 className="font-bold text-slate-200 uppercase tracking-wide">Vicinity</h3><MapPin size={16} className="text-slate-500" /></div>
                      <div className="flex-1 p-4 overflow-y-auto space-y-2 custom-scrollbar">
                         {groundItems.length === 0 && <div className="h-full flex flex-col items-center justify-center text-slate-600 italic border-2 border-dashed border-slate-800 rounded"><span>No items nearby</span></div>}
-                        {groundItems.map((item: any, idx: number) => (
+                        {groundItems.map((item, idx) => (
                            <div key={item.id + idx} draggable onDragStart={(e) => handleDragStart(e, item, 'GROUND')} onClick={() => onItemClick(item, 'GROUND')} className="bg-slate-800 border border-slate-700 p-2 rounded flex items-center gap-3 cursor-move hover:bg-slate-700 hover:border-blue-500 transition-all">
-                              <div className="w-10 h-10 bg-black/40 rounded flex items-center justify-center" style={{ color: RARITY_COLORS[item.rarity as Rarity] }}>
+                              <div className="w-10 h-10 bg-black/40 rounded flex items-center justify-center" style={{ color: RARITY_COLORS[item.rarity] }}>
                                  {getItemIcon(item, 20)}
                               </div>
-                              <div className="flex-1"><p className="font-bold text-sm" style={{ color: RARITY_COLORS[item.rarity as Rarity] }}>{item.name}</p></div>
+                              <div className="flex-1"><p className="font-bold text-sm" style={{ color: RARITY_COLORS[item.rarity] }}>{item.name}</p></div>
                            </div>
                         ))}
                      </div>
